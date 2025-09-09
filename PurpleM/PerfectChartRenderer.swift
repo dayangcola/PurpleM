@@ -13,21 +13,23 @@ struct PerfectChartRenderer: View {
     @State private var astrolabe: FullAstrolabe?
     @State private var selectedPalaceIndex: Int? = nil
     
-    // 12宫格位置映射
-    let palacePositions: [(row: Int, col: Int)] = [
-        (2, 3), // 0: 巳
-        (3, 3), // 1: 午  
-        (3, 2), // 2: 未
-        (3, 1), // 3: 申
-        (3, 0), // 4: 酉
-        (2, 0), // 5: 戌
-        (1, 0), // 6: 亥
-        (0, 0), // 7: 子
-        (0, 1), // 8: 丑
-        (0, 2), // 9: 寅
-        (0, 3), // 10: 卯
-        (1, 3), // 11: 辰
+    // 12宫格位置映射 - 根据地支固定位置
+    // 标准紫微斗数布局：申在右上角，顺时针排列
+    let earthlyBranchPositions: [String: (row: Int, col: Int)] = [
+        "申": (0, 3), // 右上角
+        "酉": (1, 3), // 右边
+        "戌": (2, 3), // 右边
+        "亥": (3, 3), // 右下角
+        "子": (3, 2), // 下边
+        "丑": (3, 1), // 下边
+        "寅": (3, 0), // 左下角
+        "卯": (2, 0), // 左边
+        "辰": (1, 0), // 左边
+        "巳": (0, 0), // 左上角
+        "午": (0, 1), // 上边
+        "未": (0, 2), // 上边
     ]
+    
     
     var body: some View {
         ZStack {
@@ -36,14 +38,11 @@ struct PerfectChartRenderer: View {
             
             if let astrolabe = astrolabe {
                 VStack(spacing: 10) {
-                    // 基本信息
-                    PerfectInfoBar(astrolabe: astrolabe)
-                        .padding(.horizontal)
-                    
                     // 完美方形12宫格
                     PerfectSquareChart(
+                        astrolabe: astrolabe,
                         palaces: astrolabe.palaces,
-                        positions: palacePositions,
+                        earthlyBranchPositions: earthlyBranchPositions,
                         selectedIndex: $selectedPalaceIndex
                     )
                     .padding(.horizontal, 5)
@@ -197,16 +196,17 @@ struct PerfectInfoBar: View {
 
 // MARK: - 完美方形星盘
 struct PerfectSquareChart: View {
+    let astrolabe: FullAstrolabe
     let palaces: [FullPalace]
-    let positions: [(row: Int, col: Int)]
+    let earthlyBranchPositions: [String: (row: Int, col: Int)]
     @Binding var selectedIndex: Int?
     
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width - 10
-            let height = geometry.size.height - 20
+            let height = width  // 确保是正方形
             let cellWidth = width / 4
-            let cellHeight = height / 3  // 高度方向只分3份，因为中宫占2格高度
+            let cellHeight = height / 4  // 改为4等分，确保对齐
             
             ZStack {
                 // 外框
@@ -214,21 +214,66 @@ struct PerfectSquareChart: View {
                     .stroke(Color.moonSilver.opacity(0.3), lineWidth: 1)
                     .frame(width: width, height: height)
                 
-                // 中宫
-                VStack(spacing: 8) {
-                    Image(systemName: "star.circle.fill")
-                        .font(.system(size: 36))
-                        .foregroundStyle(
-                            LinearGradient(
-                                gradient: Gradient(colors: [Color.starGold, Color.mysticPink]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
+                // 绘制网格线
+                // 横线
+                ForEach(1..<4) { i in
+                    Path { path in
+                        path.move(to: CGPoint(x: 0, y: CGFloat(i) * cellHeight))
+                        path.addLine(to: CGPoint(x: width, y: CGFloat(i) * cellHeight))
+                    }
+                    .stroke(Color.moonSilver.opacity(0.3), lineWidth: 0.5)
+                }
+                
+                // 竖线
+                ForEach(1..<4) { i in
+                    Path { path in
+                        path.move(to: CGPoint(x: CGFloat(i) * cellWidth, y: 0))
+                        path.addLine(to: CGPoint(x: CGFloat(i) * cellWidth, y: height))
+                    }
+                    .stroke(Color.moonSilver.opacity(0.3), lineWidth: 0.5)
+                }
+                
+                // 中宫 - 显示个人信息
+                VStack(spacing: 6) {
+                    // 性别和生肖
+                    HStack(spacing: 8) {
+                        Text(astrolabe.gender)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.starGold)
+                        Text(astrolabe.zodiac)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.mysticPink)
+                    }
                     
-                    Text("紫微斗数")
-                        .font(.system(size: 18, weight: .medium, design: .serif))
+                    // 农历日期
+                    Text(astrolabe.lunarDate)
+                        .font(.system(size: 12))
                         .foregroundColor(.crystalWhite)
+                    
+                    // 时辰
+                    if let time = astrolabe.time {
+                        Text("\(time)时")
+                            .font(.system(size: 12))
+                            .foregroundColor(.moonSilver)
+                    }
+                    
+                    // 五行局
+                    Text(astrolabe.fiveElementsClass)
+                        .font(.system(size: 11))
+                        .foregroundColor(.cyan.opacity(0.8))
+                    
+                    // 命身宫位
+                    if let soul = astrolabe.earthlyBranchOfSoulPalace,
+                       let body = astrolabe.earthlyBranchOfBodyPalace {
+                        HStack(spacing: 6) {
+                            Text("命:\(soul)")
+                                .font(.system(size: 10))
+                                .foregroundColor(.starGold.opacity(0.8))
+                            Text("身:\(body)")
+                                .font(.system(size: 10))
+                                .foregroundColor(.mysticPink.opacity(0.8))
+                        }
+                    }
                 }
                 .frame(width: cellWidth * 2 - 4, height: cellHeight * 2 - 4)
                 .background(Color.cosmicPurple.opacity(0.05))
@@ -237,7 +282,8 @@ struct PerfectSquareChart: View {
                 // 12宫位
                 ForEach(0..<min(12, palaces.count), id: \.self) { index in
                     let palace = palaces[index]
-                    let position = positions[index]
+                    // 根据地支获取位置
+                    let position = earthlyBranchPositions[palace.earthlyBranch] ?? (0, 0)
                     
                     PerfectPalaceCell(
                         palace: palace,
@@ -272,18 +318,9 @@ struct PerfectPalaceCell: View {
     
     var body: some View {
         ZStack {
-            // 背景
+            // 背景 - 移除单独的边框，因为已经在主网格中绘制
             Rectangle()
                 .fill(Color.black.opacity(0.01))
-                .overlay(
-                    Rectangle()
-                        .stroke(
-                            palace.isSoulPalace == true ? Color.starGold.opacity(0.6) :
-                            palace.isBodyPalace ? Color.mysticPink.opacity(0.6) :
-                            Color.moonSilver.opacity(0.3),
-                            lineWidth: palace.isSoulPalace == true || palace.isBodyPalace ? 1.5 : 0.5
-                        )
-                )
             
             VStack(alignment: .leading, spacing: 2) {
                 // 顶部区域：宫位名、干支、命身标记
@@ -417,7 +454,6 @@ struct VerticalStarView: View {
                     .font(.system(size: 9, weight: item.type == .major ? .semibold : .regular))
                     .foregroundColor(getStarColor())
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
                     .frame(width: 10)
             }
             
@@ -487,7 +523,7 @@ struct FixedColumnsLayout: View {
     var body: some View {
         VStack(alignment: .leading, spacing: verticalSpacing) {
             ForEach(0..<rowCount, id: \.self) { row in
-                HStack(spacing: horizontalSpacing) {
+                HStack(alignment: .top, spacing: horizontalSpacing) {
                     ForEach(0..<columnsInRow(row), id: \.self) { col in
                         let index = row * columnsPerRow + col
                         if index < stars.count {
