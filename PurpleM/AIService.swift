@@ -10,9 +10,8 @@ import SwiftUI
 
 // MARK: - AI配置
 struct AIConfig {
-    static let gatewayURL = "https://gateway.vercel.app/v1/chat/completions"
-    static let apiKey = "vck_6akKqFeizin7QJIZBufpkhs2p6hHMGeODXr3OGKOmDEsR8Lg5h2C3m74"
-    static let model = "gpt-4-turbo-preview"
+    // 使用部署的后端API，不再直接调用AI Gateway
+    static let backendURL = "https://purple-m.vercel.app/api/chat-simple"
     static let maxTokens = 1000
     static let temperature = 0.8
 }
@@ -25,31 +24,28 @@ enum MessageRole: String, Codable {
 }
 
 // MARK: - API请求模型
-struct ChatCompletionRequest: Codable {
-    let model: String
-    let messages: [APIMessage]
-    let temperature: Double
-    let max_tokens: Int
+struct BackendChatRequest: Codable {
+    let message: String
+    let conversationHistory: [APIMessage]
+    let userInfo: UserInfoData?
     
     struct APIMessage: Codable {
         let role: String
         let content: String
     }
+    
+    struct UserInfoData: Codable {
+        let name: String
+        let gender: String
+        let hasChart: Bool
+    }
 }
 
 // MARK: - API响应模型
-struct ChatCompletionResponse: Codable {
-    let choices: [Choice]
-    
-    struct Choice: Codable {
-        let message: Message
-        let finish_reason: String?
-    }
-    
-    struct Message: Codable {
-        let role: String
-        let content: String
-    }
+struct BackendChatResponse: Codable {
+    let response: String
+    let success: Bool
+    let error: String?
 }
 
 // MARK: - AI人格设置
@@ -112,6 +108,11 @@ class AIService: ObservableObject {
     private let session = URLSession.shared
     private var conversationHistory: [APIMessage] = []
     
+    private struct APIMessage: Codable {
+        let role: String
+        let content: String
+    }
+    
     private init() {
         // 初始化系统提示
         resetConversation()
@@ -120,7 +121,7 @@ class AIService: ObservableObject {
     // 重置对话
     func resetConversation() {
         conversationHistory = [
-            ChatCompletionRequest.APIMessage(
+            APIMessage(
                 role: MessageRole.system.rawValue,
                 content: AIPersonality.systemPrompt
             )
@@ -135,7 +136,7 @@ class AIService: ObservableObject {
         
         if !contextPrompt.isEmpty {
             conversationHistory.append(
-                ChatCompletionRequest.APIMessage(
+                APIMessage(
                     role: MessageRole.system.rawValue,
                     content: contextPrompt
                 )
@@ -145,30 +146,46 @@ class AIService: ObservableObject {
     
     // 发送消息
     func sendMessage(_ message: String) async -> String {
-        isLoading = true
-        error = nil
+        await MainActor.run {
+            isLoading = true
+            error = nil
+        }
         
-        // 添加用户消息到历史
-        let userMessage = ChatCompletionRequest.APIMessage(
-            role: MessageRole.user.rawValue,
-            content: message
-        )
-        conversationHistory.append(userMessage)
+        // 准备对话历史（不包括系统消息）
+        let historyForBackend = conversationHistory.filter { msg in
+            msg.role != MessageRole.system.rawValue
+        }.map { msg in
+            BackendChatRequest.APIMessage(
+                role: msg.role,
+                content: msg.content
+            )
+        }
+        
+        // 准备用户信息
+        let userInfo: BackendChatRequest.UserInfoData? = {
+            if let user = UserDataManager.shared.currentUser {
+                return BackendChatRequest.UserInfoData(
+                    name: user.name,
+                    gender: user.gender,
+                    hasChart: UserDataManager.shared.currentChart != nil
+                )
+            }
+            return nil
+        }()
         
         // 创建请求
-        let request = ChatCompletionRequest(
-            model: AIConfig.model,
-            messages: conversationHistory,
-            temperature: AIConfig.temperature,
-            max_tokens: AIConfig.maxTokens
+        let request = BackendChatRequest(
+            message: message,
+            conversationHistory: historyForBackend,
+            userInfo: userInfo
         )
         
         do {
             // 创建URL请求
-            var urlRequest = URLRequest(url: URL(string: AIConfig.gatewayURL)!)
+            var urlRequest = URLRequest(url: URL(string: AIConfig.backendURL)!)
             urlRequest.httpMethod = "POST"
-            urlRequest.setValue("Bearer \(AIConfig.apiKey)", forHTTPHeaderField: "Authorization")
             urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            urlRequest.timeoutInterval = 30
             urlRequest.httpBody = try JSONEncoder().encode(request)
             
             // 发送请求
@@ -177,23 +194,30 @@ class AIService: ObservableObject {
             // 检查响应状态
             if let httpResponse = response as? HTTPURLResponse {
                 if httpResponse.statusCode != 200 {
+                    let errorMessage = String(data: data, encoding: .utf8) ?? "未知错误"
                     throw NSError(
                         domain: "AIService",
                         code: httpResponse.statusCode,
-                        userInfo: [NSLocalizedDescriptionKey: "API请求失败: \(httpResponse.statusCode)"]
+                        userInfo: [NSLocalizedDescriptionKey: errorMessage]
                     )
                 }
             }
             
             // 解析响应
-            let chatResponse = try JSONDecoder().decode(ChatCompletionResponse.self, from: data)
+            let chatResponse = try JSONDecoder().decode(BackendChatResponse.self, from: data)
             
-            if let firstChoice = chatResponse.choices.first {
-                let assistantMessage = firstChoice.message.content
+            if chatResponse.success, !chatResponse.response.isEmpty {
+                let assistantMessage = chatResponse.response
                 
-                // 添加助手回复到历史
+                // 添加对话到历史
                 conversationHistory.append(
-                    ChatCompletionRequest.APIMessage(
+                    APIMessage(
+                        role: MessageRole.user.rawValue,
+                        content: message
+                    )
+                )
+                conversationHistory.append(
+                    APIMessage(
                         role: MessageRole.assistant.rawValue,
                         content: assistantMessage
                     )
@@ -206,25 +230,23 @@ class AIService: ObservableObject {
                     conversationHistory = Array(systemMessages) + Array(recentMessages)
                 }
                 
-                isLoading = false
+                await MainActor.run {
+                    self.isLoading = false
+                }
                 return assistantMessage
             } else {
                 throw NSError(
                     domain: "AIService",
                     code: -1,
-                    userInfo: [NSLocalizedDescriptionKey: "未收到有效回复"]
+                    userInfo: [NSLocalizedDescriptionKey: chatResponse.error ?? "未收到有效回复"]
                 )
             }
             
         } catch {
-            self.error = error.localizedDescription
-            isLoading = false
-            
-            // 如果出错，移除最后添加的用户消息
-            if conversationHistory.last?.role == MessageRole.user.rawValue {
-                conversationHistory.removeLast()
+            await MainActor.run {
+                self.error = error.localizedDescription
+                self.isLoading = false
             }
-            
             return "抱歉，我暂时无法回答。请稍后再试。"
         }
     }

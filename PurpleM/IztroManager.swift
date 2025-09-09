@@ -74,7 +74,9 @@ class IztroManager: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMe
             webView?.evaluateJavaScript(jsCode) { result, error in
                 if let error = error {
                     print("JavaScript error: \(error)")
-                    self.isCalculating = false
+                    DispatchQueue.main.async {
+                        self.isCalculating = false
+                    }
                 }
             }
         }
