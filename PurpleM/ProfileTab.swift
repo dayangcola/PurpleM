@@ -8,7 +8,8 @@
 import SwiftUI
 
 struct ProfileTab: View {
-    @State private var userName = "星语用户"
+    @StateObject private var userDataManager = UserDataManager.shared
+    @State private var showEditUserInfo = false
     @State private var userAvatar = "person.circle.fill"
     
     var body: some View {
@@ -38,18 +39,28 @@ struct ProfileTab: View {
                                                 .frame(width: 100, height: 100)
                                         )
                                     
-                                    Text(userName)
+                                    Text(userDataManager.currentUser?.name ?? "星语用户")
                                         .font(.system(size: 20, weight: .medium))
                                         .foregroundColor(.crystalWhite)
                                     
-                                    Text("探索星语奥秘的旅程刚刚开始")
+                                    if let user = userDataManager.currentUser {
+                                        HStack {
+                                            Text(user.gender)
+                                            Text("·")
+                                            Text(formatBirthDate(user.birthDate))
+                                        }
                                         .font(.system(size: 14))
                                         .foregroundColor(.moonSilver.opacity(0.8))
+                                    } else {
+                                        Text("探索星语奥秘的旅程刚刚开始")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.moonSilver.opacity(0.8))
+                                    }
                                 }
                                 
                                 // 编辑按钮
                                 Button(action: {
-                                    // TODO: 编辑用户信息
+                                    showEditUserInfo = true
                                 }) {
                                     HStack {
                                         Image(systemName: "pencil.circle")
@@ -143,8 +154,19 @@ struct ProfileTab: View {
                 }
             }
             .navigationBarHidden(true)
+            .sheet(isPresented: $showEditUserInfo) {
+                UserInfoInputView(iztroManager: IztroManager(), onComplete: {
+                    // 更新完成后刷新界面
+                })
+            }
         }
         .navigationViewStyle(StackNavigationViewStyle())
+    }
+    
+    private func formatBirthDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy年MM月dd日"
+        return formatter.string(from: date)
     }
 }
 

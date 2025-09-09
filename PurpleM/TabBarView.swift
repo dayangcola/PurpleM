@@ -10,6 +10,7 @@ import SwiftUI
 struct TabBarView: View {
     @State private var selectedTab = 0
     @StateObject private var iztroManager = IztroManager()
+    @StateObject private var userDataManager = UserDataManager.shared
     
     var body: some View {
         TabView(selection: $selectedTab) {
