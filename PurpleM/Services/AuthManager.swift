@@ -7,8 +7,8 @@ struct User: Codable, Identifiable, Equatable {
     let email: String
     let username: String?
     let avatarUrl: String?
-    let subscriptionTier: String
-    let createdAt: Date
+    let subscriptionTier: String?
+    let createdAt: String  // 改为String，因为API返回的是ISO字符串
     
     enum CodingKeys: String, CodingKey {
         case id
@@ -17,6 +17,11 @@ struct User: Codable, Identifiable, Equatable {
         case avatarUrl = "avatar_url"
         case subscriptionTier = "subscription_tier"
         case createdAt = "created_at"
+    }
+    
+    // 计算属性，获取订阅等级
+    var tier: String {
+        return subscriptionTier ?? "free"
     }
 }
 
@@ -113,9 +118,7 @@ class AuthManager: ObservableObject {
                 throw AuthError.invalidCredentials
             }
             
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            let authResponse = try decoder.decode(AuthResponse.self, from: data)
+            let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
             
             print("✅ Login successful for user: \(authResponse.user.id)")
             
@@ -178,9 +181,7 @@ class AuthManager: ObservableObject {
                 throw AuthError.signUpFailed
             }
             
-            let decoder = JSONDecoder()
-            decoder.dateDecodingStrategy = .iso8601
-            let authResponse = try decoder.decode(AuthResponse.self, from: data)
+            let authResponse = try JSONDecoder().decode(AuthResponse.self, from: data)
             
             print("✅ Signup successful for user: \(authResponse.user.id)")
             

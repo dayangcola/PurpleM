@@ -88,9 +88,9 @@ async function handleLogin(req, res, supabase) {
     id: authData.user.id,
     email: authData.user.email,
     username: profile?.username || null,
-    avatarUrl: profile?.avatar_url || null,
-    subscriptionTier: profile?.subscription_tier || 'free',
-    createdAt: authData.user.created_at
+    avatar_url: profile?.avatar_url || null,
+    subscription_tier: profile?.subscription_tier || 'free',
+    created_at: authData.user.created_at
   };
 
   res.status(200).json({
@@ -193,9 +193,9 @@ async function handleSignup(req, res, supabase) {
       id: authData.user.id,
       email: authData.user.email,
       username: username,
-      avatarUrl: null,
-      subscriptionTier: 'free',
-      createdAt: authData.user.created_at
+      avatar_url: null,  // 使用snake_case
+      subscription_tier: profile?.subscription_tier || 'free',  // 使用snake_case
+      created_at: authData.user.created_at
     };
 
     return res.status(200).json({
@@ -299,9 +299,9 @@ async function handleValidate(req, res, supabase) {
       id: user.id,
       email: user.email,
       username: profile?.username || null,
-      avatarUrl: profile?.avatar_url || null,
-      subscriptionTier: profile?.subscription_tier || 'free',
-      createdAt: user.created_at
+      avatar_url: profile?.avatar_url || null,
+      subscription_tier: profile?.subscription_tier || 'free',
+      created_at: user.created_at
     }
   });
 }
