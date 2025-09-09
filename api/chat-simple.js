@@ -62,12 +62,13 @@ export default async function handler(req, res) {
     // 调用Vercel AI Gateway
     const VERCEL_AI_GATEWAY_KEY = process.env.VERCEL_AI_GATEWAY_KEY;
     
-    // 调用Vercel AI Gateway - 需要指定provider
-    const aiResponse = await fetch('https://gateway.vercel.app/openai/v1/chat/completions', {
+    // 调用Vercel AI Gateway v1
+    const aiResponse = await fetch('https://gateway.vercel.app/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${VERCEL_AI_GATEWAY_KEY}`,
         'Content-Type': 'application/json',
+        'x-vercel-ai-provider': 'openai',
       },
       body: JSON.stringify({
         model: 'gpt-4-turbo-preview',
