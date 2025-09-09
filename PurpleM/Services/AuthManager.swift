@@ -86,7 +86,7 @@ class AuthManager: ObservableObject {
         authState = .loading
         
         do {
-            let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth/login")!
+            let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth?action=login")!
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -147,7 +147,7 @@ class AuthManager: ObservableObject {
         authState = .loading
         
         do {
-            let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth/signup")!
+            let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth?action=signup")!
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -215,7 +215,7 @@ class AuthManager: ObservableObject {
     // MARK: - Sign Out
     func signOut() async {
         do {
-            let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth/logout")!
+            let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth?action=logout")!
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             
@@ -236,7 +236,7 @@ class AuthManager: ObservableObject {
     
     // MARK: - Reset Password
     func resetPassword(email: String) async throws {
-        let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth/reset-password")!
+        let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth?action=reset-password")!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -256,7 +256,7 @@ class AuthManager: ObservableObject {
     private func validateSession(userId: String) {
         Task {
             do {
-                let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth/validate")!
+                let url = URL(string: "\(SupabaseConfig.apiBaseURL)/auth?action=validate")!
                 var request = URLRequest(url: url)
                 request.httpMethod = "GET"
                 

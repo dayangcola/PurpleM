@@ -1,0 +1,285 @@
+import { createClient } from '@supabase/supabase-js';
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
+export default async function handler(req, res) {
+  // CORS设置
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // 从URL路径提取操作类型
+  const { action } = req.query;
+
+  try {
+    switch (action) {
+      case 'login':
+        return await handleLogin(req, res);
+      case 'signup':
+        return await handleSignup(req, res);
+      case 'logout':
+        return await handleLogout(req, res);
+      case 'reset-password':
+        return await handleResetPassword(req, res);
+      case 'validate':
+        return await handleValidate(req, res);
+      default:
+        return res.status(404).json({ error: 'Action not found' });
+    }
+  } catch (error) {
+    console.error('Auth error:', error);
+    res.status(500).json({ 
+      error: '服务器错误，请稍后重试',
+      success: false 
+    });
+  }
+}
+
+// 处理登录
+async function handleLogin(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ 
+      error: '请提供邮箱和密码' 
+    });
+  }
+
+  const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  if (authError) {
+    return res.status(401).json({ 
+      error: authError.message || '登录失败' 
+    });
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', authData.user.id)
+    .single();
+
+  const user = {
+    id: authData.user.id,
+    email: authData.user.email,
+    username: profile?.username || null,
+    avatarUrl: profile?.avatar_url || null,
+    subscriptionTier: profile?.subscription_tier || 'free',
+    createdAt: authData.user.created_at
+  };
+
+  res.status(200).json({
+    user,
+    access_token: authData.session.access_token,
+    refresh_token: authData.session.refresh_token,
+    success: true
+  });
+}
+
+// 处理注册
+async function handleSignup(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { email, password, username } = req.body;
+
+  if (!email || !password || !username) {
+    return res.status(400).json({ 
+      error: '请提供完整的注册信息' 
+    });
+  }
+
+  if (password.length < 6) {
+    return res.status(400).json({ 
+      error: '密码至少需要6个字符' 
+    });
+  }
+
+  const { data: existingUser } = await supabase
+    .from('profiles')
+    .select('username')
+    .eq('username', username)
+    .single();
+
+  if (existingUser) {
+    return res.status(400).json({ 
+      error: '该用户名已被使用' 
+    });
+  }
+
+  const { data: authData, error: authError } = await supabase.auth.signUp({
+    email,
+    password,
+    options: {
+      data: {
+        username: username
+      }
+    }
+  });
+
+  if (authError) {
+    return res.status(400).json({ 
+      error: authError.message || '注册失败' 
+    });
+  }
+
+  await supabase
+    .from('profiles')
+    .upsert({
+      id: authData.user.id,
+      email: authData.user.email,
+      username: username,
+      subscription_tier: 'free',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+
+  await supabase
+    .from('user_ai_quotas')
+    .insert({
+      user_id: authData.user.id,
+      subscription_tier: 'free',
+      daily_limit: 50,
+      monthly_limit: 1000,
+      daily_used: 0,
+      monthly_used: 0,
+      total_tokens_used: 0,
+      daily_reset_at: new Date().toISOString().split('T')[0],
+      monthly_reset_at: new Date().toISOString()
+    });
+
+  await supabase
+    .from('user_ai_preferences')
+    .insert({
+      user_id: authData.user.id,
+      conversation_style: 'mystical',
+      response_length: 'medium',
+      language_complexity: 'normal',
+      auto_save_sessions: true,
+      show_interpretation_hints: true
+    });
+
+  const user = {
+    id: authData.user.id,
+    email: authData.user.email,
+    username: username,
+    avatarUrl: null,
+    subscriptionTier: 'free',
+    createdAt: authData.user.created_at
+  };
+
+  res.status(200).json({
+    user,
+    access_token: authData.session?.access_token || null,
+    refresh_token: authData.session?.refresh_token || null,
+    success: true,
+    message: '注册成功！请查收邮件验证您的账号。'
+  });
+}
+
+// 处理登出
+async function handleLogout(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const token = req.headers.authorization?.replace('Bearer ', '');
+
+  if (token) {
+    const { error } = await supabase.auth.admin.signOut(token);
+    if (error) {
+      console.error('Logout error:', error);
+    }
+  }
+
+  res.status(200).json({
+    success: true,
+    message: '已成功登出'
+  });
+}
+
+// 处理密码重置
+async function handleResetPassword(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).json({ 
+      error: '请提供邮箱地址' 
+    });
+  }
+
+  const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: 'https://purple-m.vercel.app/reset-password-confirm'
+  });
+
+  if (error) {
+    console.error('Reset password error:', error);
+  }
+
+  res.status(200).json({
+    success: true,
+    message: '如果该邮箱已注册，您将收到重置密码的链接'
+  });
+}
+
+// 处理验证
+async function handleValidate(req, res) {
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const token = req.headers.authorization?.replace('Bearer ', '');
+
+  if (!token) {
+    return res.status(401).json({ 
+      error: '未提供认证令牌',
+      valid: false 
+    });
+  }
+
+  const { data: { user }, error } = await supabase.auth.getUser(token);
+
+  if (error || !user) {
+    return res.status(401).json({ 
+      error: '无效的认证令牌',
+      valid: false 
+    });
+  }
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  res.status(200).json({
+    valid: true,
+    user: {
+      id: user.id,
+      email: user.email,
+      username: profile?.username || null,
+      avatarUrl: profile?.avatar_url || null,
+      subscriptionTier: profile?.subscription_tier || 'free',
+      createdAt: user.created_at
+    }
+  });
+}
