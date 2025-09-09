@@ -296,9 +296,9 @@ struct ModernInputView: View {
                     // 性别选择
                     GlassmorphicCard {
                         VStack(alignment: .leading, spacing: 15) {
-                            Label("性别", systemImage: "person.2")
+                            Label("选择性别", systemImage: "person.2")
                                 .font(.headline)
-                                .foregroundColor(.moonSilver)
+                                .foregroundColor(.crystalWhite)
                             
                             HStack(spacing: 20) {
                                 ForEach(["女", "男"], id: \.self) { gender in
@@ -307,15 +307,16 @@ struct ModernInputView: View {
                                             selectedGender = gender
                                         }
                                     }) {
-                                        HStack {
-                                            Image(systemName: gender == "女" ? "moon.fill" : "sun.max.fill")
-                                            Text(gender)
+                                        VStack(spacing: 8) {
+                                            Image(systemName: gender == "女" ? "person.fill.turn.left" : "person.fill.turn.right")
+                                                .font(.system(size: 24))
+                                            Text(gender == "女" ? "女性" : "男性")
+                                                .font(.system(size: 14, weight: .medium))
                                         }
                                         .foregroundColor(selectedGender == gender ? .white : .moonSilver.opacity(0.6))
-                                        .padding(.horizontal, 30)
-                                        .padding(.vertical, 12)
+                                        .frame(width: 80, height: 80)
                                         .background(
-                                            Capsule()
+                                            RoundedRectangle(cornerRadius: 15)
                                                 .fill(selectedGender == gender ?
                                                     LinearGradient(
                                                         gradient: Gradient(colors: [
@@ -332,14 +333,17 @@ struct ModernInputView: View {
                                                     )
                                                 )
                                                 .overlay(
-                                                    Capsule()
-                                                        .stroke(Color.moonSilver.opacity(0.3), lineWidth: 1)
+                                                    RoundedRectangle(cornerRadius: 15)
+                                                        .stroke(selectedGender == gender ? 
+                                                            Color.clear : 
+                                                            Color.moonSilver.opacity(0.3), 
+                                                            lineWidth: 1)
                                                 )
                                         )
                                     }
                                 }
+                                Spacer()
                             }
-                            .frame(maxWidth: .infinity)
                         }
                     }
                     .scaleEffect(animateForm ? 1 : 0.9)
@@ -349,21 +353,47 @@ struct ModernInputView: View {
                     // 日期选择
                     GlassmorphicCard {
                         VStack(alignment: .leading, spacing: 15) {
-                            HStack {
-                                Label("出生日期", systemImage: "calendar")
-                                    .font(.headline)
-                                    .foregroundColor(.moonSilver)
-                                
-                                Spacer()
-                                
-                                Toggle("", isOn: $isLunarDate)
-                                    .labelsHidden()
-                                    .toggleStyle(CustomToggleStyle())
-                                
-                                Text(isLunarDate ? "农历" : "阳历")
-                                    .font(.caption)
-                                    .foregroundColor(.moonSilver.opacity(0.8))
+                            Label("出生日期", systemImage: "calendar")
+                                .font(.headline)
+                                .foregroundColor(.crystalWhite)
+                            
+                            // 历法切换
+                            HStack(spacing: 0) {
+                                ForEach([false, true], id: \.self) { isLunar in
+                                    Button(action: {
+                                        withAnimation(.spring()) {
+                                            isLunarDate = isLunar
+                                        }
+                                    }) {
+                                        HStack {
+                                            Image(systemName: isLunar ? "moon.circle" : "sun.max.circle")
+                                                .font(.system(size: 16))
+                                            Text(isLunar ? "农历" : "公历")
+                                                .font(.system(size: 14, weight: .medium))
+                                        }
+                                        .foregroundColor(isLunarDate == isLunar ? .white : .moonSilver.opacity(0.6))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 8)
+                                        .background(
+                                            isLunarDate == isLunar ?
+                                            AnyView(
+                                                LinearGradient(
+                                                    gradient: Gradient(colors: [Color.starGold, Color.mysticPink]),
+                                                    startPoint: .leading,
+                                                    endPoint: .trailing
+                                                )
+                                            ) :
+                                            AnyView(Color.clear)
+                                        )
+                                    }
+                                }
                             }
+                            .background(Color.cosmicPurple.opacity(0.2))
+                            .cornerRadius(10)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.moonSilver.opacity(0.3), lineWidth: 1)
+                            )
                             
                             DatePicker(
                                 "",

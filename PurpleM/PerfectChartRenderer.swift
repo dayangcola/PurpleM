@@ -203,19 +203,21 @@ struct PerfectSquareChart: View {
     
     var body: some View {
         GeometryReader { geometry in
-            let size = min(geometry.size.width - 10, geometry.size.height - 20)
-            let cellSize = size / 4  // 标准的4x4网格
+            let width = geometry.size.width - 10
+            let height = geometry.size.height - 20
+            let cellWidth = width / 4
+            let cellHeight = height / 3  // 高度方向只分3份，因为中宫占2格高度
             
             ZStack {
-                // 背景网格
+                // 背景网格 - 使用不同的宽高
                 ForEach(0..<4) { row in
                     ForEach(0..<4) { col in
                         Rectangle()
                             .stroke(Color.moonSilver.opacity(0.2), lineWidth: 0.5)
-                            .frame(width: cellSize, height: cellSize)
+                            .frame(width: cellWidth, height: cellHeight)
                             .position(
-                                x: CGFloat(col) * cellSize + cellSize/2,
-                                y: CGFloat(row) * cellSize + cellSize/2
+                                x: CGFloat(col) * cellWidth + cellWidth/2,
+                                y: CGFloat(row) * cellHeight + cellHeight/2
                             )
                     }
                 }
@@ -236,7 +238,7 @@ struct PerfectSquareChart: View {
                         .font(.system(size: 18, weight: .medium, design: .serif))
                         .foregroundColor(.crystalWhite)
                 }
-                .frame(width: cellSize * 2 - 4, height: cellSize * 2 - 4)
+                .frame(width: cellWidth * 2 - 4, height: cellHeight * 2 - 4)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color.cosmicPurple.opacity(0.1))
@@ -252,7 +254,7 @@ struct PerfectSquareChart: View {
                             lineWidth: 1
                         )
                 )
-                .position(x: size/2, y: size/2)
+                .position(x: width/2, y: height/2)
                 
                 // 12宫位
                 ForEach(0..<min(12, palaces.count), id: \.self) { index in
@@ -262,12 +264,13 @@ struct PerfectSquareChart: View {
                     PerfectPalaceCell(
                         palace: palace,
                         isSelected: selectedIndex == index,
-                        cellSize: cellSize
+                        cellWidth: cellWidth,
+                        cellHeight: cellHeight
                     )
-                    .frame(width: cellSize - 2, height: cellSize - 2)
+                    .frame(width: cellWidth - 2, height: cellHeight - 2)
                     .position(
-                        x: CGFloat(position.col) * cellSize + cellSize/2,
-                        y: CGFloat(position.row) * cellSize + cellSize/2
+                        x: CGFloat(position.col) * cellWidth + cellWidth/2,
+                        y: CGFloat(position.row) * cellHeight + cellHeight/2
                     )
                     .onTapGesture {
                         withAnimation(.spring()) {
@@ -276,7 +279,7 @@ struct PerfectSquareChart: View {
                     }
                 }
             }
-            .frame(width: size, height: size)
+            .frame(width: width, height: height)
         }
         .aspectRatio(1, contentMode: .fit)
     }
@@ -286,7 +289,8 @@ struct PerfectSquareChart: View {
 struct PerfectPalaceCell: View {
     let palace: FullPalace
     let isSelected: Bool
-    let cellSize: CGFloat
+    let cellWidth: CGFloat
+    let cellHeight: CGFloat
     
     var body: some View {
         ZStack {
@@ -353,15 +357,14 @@ struct PerfectPalaceCell: View {
                 // 星耀显示区域 - 竖向文字横向排列
                 let allStars = collectAllStars(palace: palace)
                 if !allStars.isEmpty {
-                    ScrollView(.vertical, showsIndicators: false) {
-                        WrappingHStack(alignment: .leading, spacing: 2) {
-                            ForEach(allStars, id: \.id) { starItem in
-                                VerticalStarView(item: starItem)
-                            }
+                    // 不使用ScrollView，直接显示所有内容
+                    WrappingHStack(alignment: .leading, spacing: 2) {
+                        ForEach(allStars, id: \.id) { starItem in
+                            VerticalStarView(item: starItem)
                         }
-                        .padding(.horizontal, 2)
                     }
-                    .frame(maxHeight: cellSize * 0.75)
+                    .padding(.horizontal, 2)
+                    .frame(maxHeight: .infinity)
                 }
                 
                 Spacer(minLength: 0)
@@ -534,5 +537,6 @@ struct WrappingHStack<Content: View>: View {
                     return result
                 }
         }
+        .frame(height: max(0, -height)) // 确保内容有足够高度
     }
 }
