@@ -132,7 +132,7 @@ struct ProfileTab: View {
                                 .foregroundColor(.moonSilver.opacity(0.6))
                             
                             Text("传承千年智慧，点亮人生星光")
-                                .font(.system(size: 11, style: .rounded))
+                                .font(.system(size: 11, weight: .light, design: .rounded))
                                 .foregroundColor(.starGold.opacity(0.8))
                                 .italic()
                         }

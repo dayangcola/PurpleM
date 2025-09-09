@@ -181,8 +181,8 @@ struct ChatBubble: View {
                     .background(
                         RoundedRectangle(cornerRadius: 18)
                             .fill(message.isFromUser ? 
-                                  LinearGradient(colors: [.mysticPink, .cosmicPurple], startPoint: .leading, endPoint: .trailing) :
-                                  Color.white.opacity(0.1)
+                                  AnyShapeStyle(LinearGradient(colors: [.mysticPink, .cosmicPurple], startPoint: .leading, endPoint: .trailing)) :
+                                  AnyShapeStyle(Color.white.opacity(0.1))
                             )
                     )
                 
