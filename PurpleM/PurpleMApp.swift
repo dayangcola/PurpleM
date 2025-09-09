@@ -6,27 +6,12 @@
 //
 
 import SwiftUI
-import SwiftData
 
 @main
 struct PurpleMApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
-
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ModernZiWeiView()  // 使用现代化星语时光主题UI
         }
-        .modelContainer(sharedModelContainer)
     }
 }

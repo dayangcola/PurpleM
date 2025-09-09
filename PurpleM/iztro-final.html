@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>紫微斗数计算器</title>
+    <script src="iztro.min.js"></script>
+    <script>
+        // 修复 forEach 兼容性问题
+        if (!NodeList.prototype.forEach) {
+            NodeList.prototype.forEach = Array.prototype.forEach;
+        }
+        
+        // 全局错误捕获
+        window.onerror = function(msg, url, line, col, error) {
+            console.log('Global error:', msg, error);
+            return true;
+        };
+        
+        window.onload = function() {
+            console.log('开始初始化...');
+            
+            // 创建一个安全的计算函数
+            window.calculateAstrolabe = function(inputJson) {
+                console.log('收到输入:', inputJson);
+                
+                try {
+                    const input = JSON.parse(inputJson);
+                    
+                    // 直接创建一个新的 astro 实例，避免全局配置
+                    let result = null;
+                    
+                    // 方法1：尝试最简单的调用
+                    try {
+                        // 初始化默认语言，避免 forEach 错误
+                        if (window.iztro && window.iztro.setLanguage) {
+                            try {
+                                // 尝试设置语言，如果失败就忽略
+                                window.iztro.setLanguage('zh-CN');
+                            } catch(e) {
+                                console.log('设置语言失败，使用默认');
+                            }
+                        }
+                        
+                        // 确保 astro 对象存在
+                        if (!window.iztro || !window.iztro.astro || !window.iztro.astro.bySolar) {
+                            throw new Error('iztro 库未正确加载');
+                        }
+                        
+                        // 构造日期字符串
+                        const dateStr = `${input.year}-${input.month}-${input.day}`;
+                        console.log('日期字符串:', dateStr);
+                        
+                        // 计算时辰索引（0-11）
+                        const timeIndex = Math.floor(input.hour / 2);
+                        console.log('时辰索引:', timeIndex);
+                        
+                        // 调用 iztro - 使用最基本的参数
+                        const astrolabe = window.iztro.astro.bySolar(
+                            dateStr,
+                            timeIndex,
+                            input.gender === '男' ? 'male' : 'female',
+                            true  // fixLeap
+                        );
+                        
+                        console.log('计算成功!', astrolabe);
+                        
+                        // 构建返回数据
+                        result = {
+                            success: true,
+                            solarDate: astrolabe.solarDate || dateStr,
+                            lunarDate: astrolabe.lunarDate || '农历日期',
+                            chineseDate: astrolabe.chineseDate || '',
+                            
+                            // 基本信息
+                            gender: astrolabe.gender || input.gender,
+                            zodiac: astrolabe.zodiac || '',
+                            sign: astrolabe.sign || '',
+                            fiveElementsClass: astrolabe.fiveElementsClass || '',
+                            
+                            // 命身宫信息
+                            earthlyBranchOfSoulPalace: astrolabe.earthlyBranchOfSoulPalace || '',
+                            earthlyBranchOfBodyPalace: astrolabe.earthlyBranchOfBodyPalace || '',
+                            soul: astrolabe.soul || '',
+                            body: astrolabe.body || '',
+                            time: astrolabe.time || '',
+                            timeRange: astrolabe.timeRange || '',
+                            
+                            // 宫位信息
+                            palaces: []
+                        };
+                        
+                        // 提取宫位数据
+                        if (astrolabe.palaces && Array.isArray(astrolabe.palaces)) {
+                            result.palaces = astrolabe.palaces.map((palace, idx) => {
+                                const palaceInfo = {
+                                    index: idx,
+                                    name: palace.name || `宫位${idx+1}`,
+                                    heavenlyStem: palace.heavenlyStem || '',
+                                    earthlyBranch: palace.earthlyBranch || '',
+                                    isBodyPalace: palace.isBodyPalace || false,
+                                    isSoulPalace: palace.isSoulPalace || false,
+                                    isOriginalPalace: palace.isOriginalPalace || false,
+                                    majorStars: [],
+                                    minorStars: [],
+                                    adjectiveStars: [],
+                                    changsheng12: [],
+                                    boshi12: [],
+                                    jiangqian12: [],
+                                    suiqian12: [],
+                                    ages: palace.ages || []
+                                };
+                                
+                                // 提取星耀
+                                if (palace.majorStars) {
+                                    palaceInfo.majorStars = palace.majorStars.map(star => ({
+                                        name: star.name || star.toString(),
+                                        brightness: star.brightness || '',
+                                        mutagen: star.mutagen || ''
+                                    }));
+                                }
+                                
+                                if (palace.minorStars) {
+                                    palaceInfo.minorStars = palace.minorStars.map(star => ({
+                                        name: star.name || star.toString(),
+                                        brightness: star.brightness || '',
+                                        mutagen: star.mutagen || ''
+                                    }));
+                                }
+                                
+                                // 提取杂曜 - 非常重要！
+                                if (palace.adjectiveStars) {
+                                    console.log(`宫位 ${palace.name} 的杂曜原始数据:`, palace.adjectiveStars);
+                                    // 杂曜可能是字符串数组或对象数组
+                                    if (Array.isArray(palace.adjectiveStars)) {
+                                        if (palace.adjectiveStars.length > 0) {
+                                            if (typeof palace.adjectiveStars[0] === 'string') {
+                                                // 如果是字符串数组，直接使用
+                                                palaceInfo.adjectiveStars = palace.adjectiveStars;
+                                                console.log(`  -> 字符串数组:`, palaceInfo.adjectiveStars);
+                                            } else {
+                                                // 如果是对象数组，提取名称
+                                                palaceInfo.adjectiveStars = palace.adjectiveStars.map(star => 
+                                                    star.name || star.toString()
+                                                );
+                                                console.log(`  -> 对象数组提取:`, palaceInfo.adjectiveStars);
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // 添加神煞系统（如果需要显示）
+                                if (palace.changsheng12) {
+                                    palaceInfo.changsheng12 = palace.changsheng12;
+                                }
+                                if (palace.boshi12) {
+                                    palaceInfo.boshi12 = palace.boshi12;
+                                }
+                                
+                                return palaceInfo;
+                            });
+                        }
+                        
+                    } catch(e) {
+                        console.error('计算失败:', e);
+                        
+                        // 方法2：如果失败，返回测试数据
+                        result = {
+                            success: false,
+                            error: e.toString(),
+                            testMode: true,
+                            solarDate: `${input.year}年${input.month}月${input.day}日`,
+                            lunarDate: '测试模式',
+                            gender: input.gender,
+                            
+                            // 返回测试数据，让UI可以显示
+                            palaces: [
+                                { index: 0, name: '命宫', majorStars: [{name: '紫微'}], isSoulPalace: true },
+                                { index: 1, name: '兄弟', majorStars: [{name: '天机'}] },
+                                { index: 2, name: '夫妻', majorStars: [{name: '太阳'}] },
+                                { index: 3, name: '子女', majorStars: [{name: '武曲'}] },
+                                { index: 4, name: '财帛', majorStars: [{name: '天同'}] },
+                                { index: 5, name: '疾厄', majorStars: [{name: '廉贞'}] },
+                                { index: 6, name: '迁移', majorStars: [] },
+                                { index: 7, name: '交友', majorStars: [{name: '天府'}] },
+                                { index: 8, name: '官禄', majorStars: [{name: '太阴'}] },
+                                { index: 9, name: '田宅', majorStars: [{name: '贪狼'}] },
+                                { index: 10, name: '福德', majorStars: [{name: '巨门'}] },
+                                { index: 11, name: '父母', majorStars: [{name: '天相'}], isBodyPalace: true }
+                            ]
+                        };
+                    }
+                    
+                    // 发送结果
+                    window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify(result));
+                    
+                } catch (error) {
+                    console.error('严重错误:', error);
+                    window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify({
+                        error: error.toString(),
+                        stack: error.stack
+                    }));
+                }
+            };
+            
+            // 通知iOS准备就绪
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iztroHandler) {
+                window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify({
+                    status: 'ready',
+                    version: 'final'
+                }));
+            }
+        };
+    </script>
+</head>
+<body>
+    <div style="display:none;">紫微斗数计算引擎</div>
+</body>
+</html>

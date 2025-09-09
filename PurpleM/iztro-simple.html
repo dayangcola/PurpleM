@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iztro Calculator</title>
+    <script src="iztro.min.js"></script>
+    <script>
+        // 等待页面加载完成
+        window.onload = function() {
+            // 测试iztro是否正确加载
+            console.log('iztro loaded:', typeof iztro);
+            console.log('iztro.astro:', typeof iztro.astro);
+            
+            // 全局函数供iOS调用
+            window.calculateAstrolabe = function(inputJson) {
+                try {
+                    const input = JSON.parse(inputJson);
+                    console.log('Received input:', input);
+                    
+                    // 先尝试不带语言参数调用
+                    let astrolabe;
+                    try {
+                        // 尝试默认调用 - 性别使用英文
+                        astrolabe = iztro.astro.bySolar(
+                            input.year,
+                            input.month,
+                            input.day,
+                            input.hour,
+                            input.minute,
+                            input.gender === '男' ? 'male' : 'female',
+                            input.fixLeap || false
+                        );
+                    } catch(e1) {
+                        console.log('First try failed:', e1);
+                        
+                        // 尝试带语言参数
+                        try {
+                            astrolabe = iztro.astro.bySolar(
+                                input.year,
+                                input.month,
+                                input.day,
+                                input.hour,
+                                input.minute,
+                                input.gender === '男' ? 'male' : 'female',
+                                input.fixLeap || false,
+                                { language: 'zh-CN' }
+                            );
+                        } catch(e2) {
+                            console.log('Second try failed:', e2);
+                            throw e2;
+                        }
+                    }
+                    
+                    console.log('Astrolabe calculated:', astrolabe);
+                    
+                    // 简化结果，只返回基本信息
+                    const result = {
+                        success: true,
+                        solarDate: astrolabe.solarDate || '计算成功',
+                        lunarDate: astrolabe.lunarDate || '农历信息',
+                        // 尝试获取宫位信息
+                        palacesCount: astrolabe.palaces ? astrolabe.palaces.length : 0,
+                        // 获取第一个宫位的信息作为测试
+                        firstPalace: astrolabe.palaces && astrolabe.palaces[0] ? {
+                            name: astrolabe.palaces[0].name || '未知',
+                            majorStars: astrolabe.palaces[0].majorStars ? 
+                                astrolabe.palaces[0].majorStars.length : 0
+                        } : null
+                    };
+                    
+                    // 发送结果给iOS
+                    window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify(result));
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify({
+                        error: error.toString(),
+                        stack: error.stack
+                    }));
+                }
+            };
+            
+            // 通知iOS页面已加载
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iztroHandler) {
+                window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify({
+                    status: 'ready',
+                    iztroLoaded: typeof iztro !== 'undefined',
+                    astroAvailable: typeof iztro !== 'undefined' && typeof iztro.astro !== 'undefined'
+                }));
+            }
+        };
+    </script>
+</head>
+<body>
+    <!-- 隐藏的WebView，仅用于运行JavaScript -->
+</body>
+</html>

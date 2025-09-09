@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Test</title>
+    <script>
+        window.onload = function() {
+            // 立即发送测试消息
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iztroHandler) {
+                window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify({
+                    status: 'test page loaded',
+                    message: 'WebView is working!'
+                }));
+            } else {
+                alert('WebKit message handler not found');
+            }
+        };
+    </script>
+</head>
+<body>
+    <h1>Test Page</h1>
+    <p>If you see this, HTML is loading correctly.</p>
+</body>
+</html>

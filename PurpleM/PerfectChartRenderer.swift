@@ -1,0 +1,538 @@
+//
+//  PerfectChartRenderer.swift
+//  PurpleM
+//
+//  完美版星盘 - 竖向文字横向排列
+//
+
+import SwiftUI
+
+// MARK: - 完美版星盘渲染器
+struct PerfectChartRenderer: View {
+    let jsonData: String
+    @State private var astrolabe: FullAstrolabe?
+    @State private var selectedPalaceIndex: Int? = nil
+    
+    // 12宫格位置映射
+    let palacePositions: [(row: Int, col: Int)] = [
+        (2, 3), // 0: 巳
+        (3, 3), // 1: 午  
+        (3, 2), // 2: 未
+        (3, 1), // 3: 申
+        (3, 0), // 4: 酉
+        (2, 0), // 5: 戌
+        (1, 0), // 6: 亥
+        (0, 0), // 7: 子
+        (0, 1), // 8: 丑
+        (0, 2), // 9: 寅
+        (0, 3), // 10: 卯
+        (1, 3), // 11: 辰
+    ]
+    
+    var body: some View {
+        ZStack {
+            // 星语时光主题背景
+            AnimatedBackground()
+            
+            if let astrolabe = astrolabe {
+                VStack(spacing: 10) {
+                    // 基本信息
+                    PerfectInfoBar(astrolabe: astrolabe)
+                        .padding(.horizontal)
+                    
+                    // 完美方形12宫格
+                    PerfectSquareChart(
+                        palaces: astrolabe.palaces,
+                        positions: palacePositions,
+                        selectedIndex: $selectedPalaceIndex
+                    )
+                    .padding(.horizontal, 5)
+                    .padding(.bottom, 10)
+                }
+            } else {
+                ProgressView()
+                    .progressViewStyle(CircularProgressViewStyle(tint: .starGold))
+                    .onAppear {
+                        parseJSON()
+                    }
+            }
+        }
+    }
+    
+    private func parseJSON() {
+        guard let data = jsonData.data(using: .utf8) else { return }
+        
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            parseManually(json: json)
+        }
+    }
+    
+    private func parseManually(json: [String: Any]) {
+        var palaces: [FullPalace] = []
+        
+        if let palacesArray = json["palaces"] as? [[String: Any]] {
+            for dict in palacesArray {
+                // 解析主星
+                var majorStars: [SquareStarInfo] = []
+                if let stars = dict["majorStars"] as? [[String: Any]] {
+                    for starDict in stars {
+                        majorStars.append(SquareStarInfo(
+                            name: starDict["name"] as? String ?? "",
+                            brightness: starDict["brightness"] as? String,
+                            mutagen: starDict["mutagen"] as? String
+                        ))
+                    }
+                }
+                
+                // 解析辅星
+                var minorStars: [SquareStarInfo] = []
+                if let stars = dict["minorStars"] as? [[String: Any]] {
+                    for starDict in stars {
+                        minorStars.append(SquareStarInfo(
+                            name: starDict["name"] as? String ?? "",
+                            brightness: starDict["brightness"] as? String,
+                            mutagen: starDict["mutagen"] as? String
+                        ))
+                    }
+                }
+                
+                // 解析杂曜 - 重要！确保获取
+                var adjectiveStars: [String] = []
+                
+                // 尝试多种可能的数据格式
+                if let adjStars = dict["adjectiveStars"] as? [String] {
+                    adjectiveStars = adjStars
+                } else if let adjStars = dict["adjectiveStars"] as? [[String: Any]] {
+                    // 如果是对象数组，提取名称
+                    adjectiveStars = adjStars.compactMap { $0["name"] as? String }
+                }
+                
+                // 调试：打印杂曜数据
+                if !adjectiveStars.isEmpty {
+                    print("宫位 \(dict["name"] ?? ""): 杂曜 = \(adjectiveStars)")
+                }
+                
+                let palace = FullPalace(
+                    index: dict["index"] as? Int ?? 0,
+                    name: dict["name"] as? String ?? "",
+                    isBodyPalace: dict["isBodyPalace"] as? Bool ?? false,
+                    isSoulPalace: dict["isSoulPalace"] as? Bool,
+                    isOriginalPalace: dict["isOriginalPalace"] as? Bool,
+                    heavenlyStem: dict["heavenlyStem"] as? String ?? "",
+                    earthlyBranch: dict["earthlyBranch"] as? String ?? "",
+                    majorStars: majorStars.isEmpty ? nil : majorStars,
+                    minorStars: minorStars.isEmpty ? nil : minorStars,
+                    adjectiveStars: adjectiveStars.isEmpty ? nil : adjectiveStars,
+                    changsheng12: dict["changsheng12"] as? [String],
+                    boshi12: dict["boshi12"] as? [String],
+                    jiangqian12: dict["jiangqian12"] as? [String],
+                    suiqian12: dict["suiqian12"] as? [String],
+                    decadal: nil,
+                    ages: dict["ages"] as? [Int]
+                )
+                
+                palaces.append(palace)
+            }
+        }
+        
+        astrolabe = FullAstrolabe(
+            success: json["success"] as? Bool ?? true,
+            gender: json["gender"] as? String ?? "",
+            solarDate: json["solarDate"] as? String ?? "",
+            lunarDate: json["lunarDate"] as? String ?? "",
+            chineseDate: json["chineseDate"] as? String ?? "",
+            time: json["time"] as? String,
+            timeRange: json["timeRange"] as? String,
+            sign: json["sign"] as? String ?? "",
+            zodiac: json["zodiac"] as? String ?? "",
+            earthlyBranchOfSoulPalace: json["earthlyBranchOfSoulPalace"] as? String,
+            earthlyBranchOfBodyPalace: json["earthlyBranchOfBodyPalace"] as? String,
+            soul: json["soul"] as? String,
+            body: json["body"] as? String,
+            fiveElementsClass: json["fiveElementsClass"] as? String ?? "",
+            palaces: palaces
+        )
+    }
+}
+
+// MARK: - 信息栏
+struct PerfectInfoBar: View {
+    let astrolabe: FullAstrolabe
+    
+    var body: some View {
+        HStack(spacing: 15) {
+            Text("\(astrolabe.lunarDate)")
+                .font(.system(size: 14))
+                .foregroundColor(.crystalWhite)
+            
+            Text("|")
+                .foregroundColor(.moonSilver.opacity(0.5))
+            
+            Text("\(astrolabe.gender)")
+                .font(.system(size: 14))
+                .foregroundColor(.crystalWhite)
+            
+            Text("|")
+                .foregroundColor(.moonSilver.opacity(0.5))
+            
+            Text("\(astrolabe.zodiac)")
+                .font(.system(size: 14))
+                .foregroundColor(.crystalWhite)
+            
+            Text("|")
+                .foregroundColor(.moonSilver.opacity(0.5))
+            
+            Text("\(astrolabe.fiveElementsClass)")
+                .font(.system(size: 14))
+                .foregroundColor(.starGold)
+        }
+        .padding(.vertical, 10)
+        .padding(.horizontal, 20)
+        .background(
+            Capsule()
+                .fill(Color.white.opacity(0.1))
+        )
+    }
+}
+
+// MARK: - 完美方形星盘
+struct PerfectSquareChart: View {
+    let palaces: [FullPalace]
+    let positions: [(row: Int, col: Int)]
+    @Binding var selectedIndex: Int?
+    
+    var body: some View {
+        GeometryReader { geometry in
+            let size = min(geometry.size.width - 10, geometry.size.height - 20)
+            let cellSize = size / 4  // 标准的4x4网格
+            
+            ZStack {
+                // 背景网格
+                ForEach(0..<4) { row in
+                    ForEach(0..<4) { col in
+                        Rectangle()
+                            .stroke(Color.moonSilver.opacity(0.2), lineWidth: 0.5)
+                            .frame(width: cellSize, height: cellSize)
+                            .position(
+                                x: CGFloat(col) * cellSize + cellSize/2,
+                                y: CGFloat(row) * cellSize + cellSize/2
+                            )
+                    }
+                }
+                
+                // 中宫
+                VStack(spacing: 8) {
+                    Image(systemName: "star.circle.fill")
+                        .font(.system(size: 36))
+                        .foregroundStyle(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.starGold, Color.mysticPink]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    
+                    Text("紫微斗数")
+                        .font(.system(size: 18, weight: .medium, design: .serif))
+                        .foregroundColor(.crystalWhite)
+                }
+                .frame(width: cellSize * 2 - 4, height: cellSize * 2 - 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.cosmicPurple.opacity(0.1))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.starGold.opacity(0.5), Color.mysticPink.opacity(0.5)]),
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            ),
+                            lineWidth: 1
+                        )
+                )
+                .position(x: size/2, y: size/2)
+                
+                // 12宫位
+                ForEach(0..<min(12, palaces.count), id: \.self) { index in
+                    let palace = palaces[index]
+                    let position = positions[index]
+                    
+                    PerfectPalaceCell(
+                        palace: palace,
+                        isSelected: selectedIndex == index,
+                        cellSize: cellSize
+                    )
+                    .frame(width: cellSize - 2, height: cellSize - 2)
+                    .position(
+                        x: CGFloat(position.col) * cellSize + cellSize/2,
+                        y: CGFloat(position.row) * cellSize + cellSize/2
+                    )
+                    .onTapGesture {
+                        withAnimation(.spring()) {
+                            selectedIndex = selectedIndex == index ? nil : index
+                        }
+                    }
+                }
+            }
+            .frame(width: size, height: size)
+        }
+        .aspectRatio(1, contentMode: .fit)
+    }
+}
+
+// MARK: - 完美宫位单元格
+struct PerfectPalaceCell: View {
+    let palace: FullPalace
+    let isSelected: Bool
+    let cellSize: CGFloat
+    
+    var body: some View {
+        ZStack {
+            // 背景
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Color.white.opacity(0.02))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(
+                            palace.isSoulPalace == true ? Color.starGold :
+                            palace.isBodyPalace ? Color.mysticPink :
+                            isSelected ? Color.crystalWhite :
+                            Color.moonSilver.opacity(0.3),
+                            lineWidth: palace.isSoulPalace == true || palace.isBodyPalace ? 2 : 0.5
+                        )
+                )
+            
+            VStack(spacing: 1) {
+                // 顶部：宫位名和干支
+                HStack {
+                    Text(palace.name)
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(.crystalWhite)
+                    
+                    Spacer()
+                    
+                    Text("\(palace.heavenlyStem)\(palace.earthlyBranch)")
+                        .font(.system(size: 8))
+                        .foregroundColor(.moonSilver.opacity(0.7))
+                }
+                .padding(.horizontal, 3)
+                .padding(.top, 2)
+                
+                // 命身标记
+                if palace.isSoulPalace == true || palace.isBodyPalace {
+                    HStack {
+                        if palace.isSoulPalace == true {
+                            Text("命")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.starGold)
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 1)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(Color.starGold.opacity(0.2))
+                                )
+                        }
+                        if palace.isBodyPalace {
+                            Text("身")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.mysticPink)
+                                .padding(.horizontal, 3)
+                                .padding(.vertical, 1)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 2)
+                                        .fill(Color.mysticPink.opacity(0.2))
+                                )
+                        }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 3)
+                }
+                
+                // 星耀显示区域 - 竖向文字横向排列
+                let allStars = collectAllStars(palace: palace)
+                if !allStars.isEmpty {
+                    ScrollView(.vertical, showsIndicators: false) {
+                        WrappingHStack(alignment: .leading, spacing: 2) {
+                            ForEach(allStars, id: \.id) { starItem in
+                                VerticalStarView(item: starItem)
+                            }
+                        }
+                        .padding(.horizontal, 2)
+                    }
+                    .frame(maxHeight: cellSize * 0.75)
+                }
+                
+                Spacer(minLength: 0)
+            }
+        }
+    }
+    
+    // 收集所有星耀
+    private func collectAllStars(palace: FullPalace) -> [StarItem] {
+        var items: [StarItem] = []
+        
+        // 主星
+        if let majorStars = palace.majorStars {
+            for star in majorStars {
+                items.append(StarItem(
+                    id: UUID().uuidString,
+                    name: star.name,
+                    brightness: star.brightness,
+                    mutagen: star.mutagen,
+                    type: .major
+                ))
+            }
+        }
+        
+        // 辅星
+        if let minorStars = palace.minorStars {
+            for star in minorStars {
+                items.append(StarItem(
+                    id: UUID().uuidString,
+                    name: star.name,
+                    brightness: star.brightness,
+                    mutagen: star.mutagen,
+                    type: .minor
+                ))
+            }
+        }
+        
+        // 杂曜 - 重要！
+        if let adjectiveStars = palace.adjectiveStars {
+            for star in adjectiveStars {
+                items.append(StarItem(
+                    id: UUID().uuidString,
+                    name: star,
+                    brightness: nil,
+                    mutagen: nil,
+                    type: .adjective
+                ))
+            }
+        }
+        
+        return items
+    }
+}
+
+// MARK: - 星耀数据项
+struct StarItem {
+    let id: String
+    let name: String
+    let brightness: String?
+    let mutagen: String?
+    let type: StarType
+    
+    enum StarType {
+        case major, minor, adjective
+    }
+}
+
+// MARK: - 竖向星耀视图
+struct VerticalStarView: View {
+    let item: StarItem
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // 星耀名称（竖向排列）
+            ForEach(Array(item.name.enumerated()), id: \.offset) { _, char in
+                Text(String(char))
+                    .font(.system(size: 8, weight: item.type == .major ? .semibold : .regular))
+                    .foregroundColor(getStarColor())
+                    .lineLimit(1)
+                    .frame(width: 10)
+            }
+            
+            // 亮度
+            if let brightness = item.brightness, !brightness.isEmpty {
+                Text(brightness)
+                    .font(.system(size: 6))
+                    .foregroundColor(.gray.opacity(0.6))
+                    .frame(width: 10)
+            }
+            
+            // 四化
+            if let mutagen = item.mutagen, !mutagen.isEmpty {
+                Text(mutagen)
+                    .font(.system(size: 7, weight: .bold))
+                    .foregroundColor(getMutagenColor(mutagen))
+                    .frame(width: 10)
+            }
+        }
+        .padding(.vertical, 1)
+        .padding(.horizontal, 0)
+    }
+    
+    private func getStarColor() -> Color {
+        switch item.type {
+        case .major:
+            // 紫微系
+            if ["紫微", "天机", "太阳", "武曲", "天同", "廉贞"].contains(item.name) {
+                return .purple
+            }
+            // 天府系
+            if ["天府", "太阴", "贪狼", "巨门", "天相", "天梁", "七杀", "破军"].contains(item.name) {
+                return .yellow
+            }
+            return .starGold
+        case .minor:
+            return .cyan
+        case .adjective:
+            return .gray.opacity(0.8)
+        }
+    }
+    
+    private func getMutagenColor(_ mutagen: String) -> Color {
+        switch mutagen {
+        case "禄": return .green
+        case "权": return .orange
+        case "科": return .blue
+        case "忌": return .red
+        default: return .gray
+        }
+    }
+}
+
+// MARK: - 换行布局
+struct WrappingHStack<Content: View>: View {
+    let alignment: HorizontalAlignment
+    let spacing: CGFloat
+    let content: Content
+    
+    init(alignment: HorizontalAlignment = .leading, spacing: CGFloat = 8, @ViewBuilder content: () -> Content) {
+        self.alignment = alignment
+        self.spacing = spacing
+        self.content = content()
+    }
+    
+    var body: some View {
+        GeometryReader { geometry in
+            self.generateContent(in: geometry)
+        }
+    }
+    
+    private func generateContent(in geometry: GeometryProxy) -> some View {
+        var width = CGFloat.zero
+        var height = CGFloat.zero
+        
+        return ZStack(alignment: .topLeading) {
+            content
+                .alignmentGuide(.leading) { dimension in
+                    if abs(width - dimension.width) > geometry.size.width {
+                        width = 0
+                        height -= dimension.height + spacing
+                    }
+                    let result = width
+                    if dimension.width > 0 {
+                        width -= dimension.width + spacing
+                    }
+                    return result
+                }
+                .alignmentGuide(.top) { _ in
+                    let result = height
+                    return result
+                }
+        }
+    }
+}

@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iztro Calculator</title>
+    <script src="iztro.min.js"></script>
+    <script>
+        window.onload = function() {
+            console.log('Page loaded');
+            console.log('iztro:', typeof iztro);
+            
+            // 设置全局语言配置，避免forEach错误
+            if (typeof iztro !== 'undefined' && iztro.config) {
+                try {
+                    // 尝试配置语言
+                    iztro.config({ 
+                        lang: 'zh-CN',
+                        zodiac: 'zh-CN'
+                    });
+                } catch(e) {
+                    console.log('Config error (ignored):', e);
+                }
+            }
+            
+            window.calculateAstrolabe = function(inputJson) {
+                try {
+                    const input = JSON.parse(inputJson);
+                    console.log('Input:', input);
+                    
+                    // 使用最基本的参数调用
+                    const astrolabe = iztro.astro.bySolar(
+                        input.year,
+                        input.month,
+                        input.day,
+                        input.hour,
+                        input.minute,
+                        input.gender === '男' ? 'male' : 'female',
+                        input.fixLeap || false
+                        // 不传递语言参数，使用默认值
+                    );
+                    
+                    console.log('Success! Astrolabe:', astrolabe);
+                    
+                    // 构造返回结果
+                    const result = {
+                        success: true,
+                        // 尝试获取日期信息
+                        solarDate: `${input.year}年${input.month}月${input.day}日`,
+                        lunarDate: '农历计算成功',
+                        
+                        // 获取宫位信息
+                        palaces: []
+                    };
+                    
+                    // 尝试提取宫位数据
+                    if (astrolabe && astrolabe.palaces) {
+                        result.palaces = astrolabe.palaces.map((palace, index) => {
+                            const palaceData = {
+                                index: index,
+                                name: palace.name || `第${index+1}宫`,
+                                heavenlyStem: palace.heavenlyStem || '',
+                                earthlyBranch: palace.earthlyBranch || '',
+                                majorStars: [],
+                                minorStars: [],
+                                isBodyPalace: palace.isBodyPalace || false,
+                                isSoulPalace: palace.isSoulPalace || false
+                            };
+                            
+                            // 提取主星
+                            if (palace.majorStars && Array.isArray(palace.majorStars)) {
+                                palaceData.majorStars = palace.majorStars.map(star => ({
+                                    name: star.name || star,
+                                    brightness: star.brightness || '',
+                                    mutagen: star.mutagen || ''
+                                }));
+                            }
+                            
+                            // 提取辅星
+                            if (palace.minorStars && Array.isArray(palace.minorStars)) {
+                                palaceData.minorStars = palace.minorStars.map(star => ({
+                                    name: star.name || star,
+                                    brightness: star.brightness || '',
+                                    mutagen: star.mutagen || ''
+                                }));
+                            }
+                            
+                            return palaceData;
+                        });
+                    }
+                    
+                    // 发送结果
+                    window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify(result));
+                    
+                } catch (error) {
+                    console.error('Error:', error);
+                    window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify({
+                        error: error.toString(),
+                        message: error.message,
+                        stack: error.stack
+                    }));
+                }
+            };
+            
+            // 通知iOS准备就绪
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iztroHandler) {
+                window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify({
+                    status: 'ready',
+                    version: 'working'
+                }));
+            }
+        };
+    </script>
+</head>
+<body>
+    <div style="display:none;">iztro calculator</div>
+</body>
+</html>
