@@ -204,9 +204,9 @@ struct PerfectSquareChart: View {
     var body: some View {
         GeometryReader { geometry in
             let width = geometry.size.width - 10
-            let height = width  // 确保是正方形
+            let height = width * 1.4  // 高度为宽度的1.4倍
             let cellWidth = width / 4
-            let cellHeight = height / 4  // 改为4等分，确保对齐
+            let cellHeight = height / 4  // 4等分高度
             
             ZStack {
                 // 外框
@@ -305,7 +305,7 @@ struct PerfectSquareChart: View {
             }
             .frame(width: width, height: height)
         }
-        .aspectRatio(1, contentMode: .fit)
+        .aspectRatio(1/1.4, contentMode: .fit)  // 调整宽高比为1:1.4
     }
 }
 
