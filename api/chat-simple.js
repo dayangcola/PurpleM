@@ -84,9 +84,30 @@ export default async function handler(req, res) {
     });
 
     if (!aiResponse.ok) {
-      const error = await aiResponse.text();
-      console.error('AI Gateway error:', error);
-      throw new Error(`AI Gateway error: ${aiResponse.status}`);
+      const errorText = await aiResponse.text();
+      console.error('AI Gateway error:', aiResponse.status, errorText);
+      
+      // 处理限流错误
+      if (aiResponse.status === 429) {
+        const retryAfter = aiResponse.headers.get('retry-after');
+        throw new Error(`请求过于频繁，请${retryAfter ? retryAfter + '秒' : '稍'}后再试`);
+      }
+      
+      // 处理其他错误
+      let errorMessage = `AI服务暂时不可用 (${aiResponse.status})`;
+      try {
+        const errorJson = JSON.parse(errorText);
+        if (errorJson.error?.message) {
+          errorMessage = errorJson.error.message;
+        }
+      } catch (e) {
+        // 如果不是JSON格式，使用原始错误文本
+        if (errorText && errorText.length < 200) {
+          errorMessage = errorText;
+        }
+      }
+      
+      throw new Error(errorMessage);
     }
 
     const aiData = await aiResponse.json();
