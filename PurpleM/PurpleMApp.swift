@@ -9,9 +9,12 @@ import SwiftUI
 
 @main
 struct PurpleMApp: App {
+    @StateObject private var authManager = AuthManager.shared
+    
     var body: some Scene {
         WindowGroup {
-            TabBarView()  // 使用新的Tab架构
+            ContentView()
+                .environmentObject(authManager)
         }
     }
 }

@@ -9,8 +9,10 @@ import SwiftUI
 
 struct ProfileTab: View {
     @StateObject private var userDataManager = UserDataManager.shared
+    @EnvironmentObject var authManager: AuthManager
     @State private var showEditUserInfo = false
     @State private var userAvatar = "person.circle.fill"
+    @State private var showingLogoutAlert = false
     
     var body: some View {
         NavigationView {
@@ -39,7 +41,7 @@ struct ProfileTab: View {
                                                 .frame(width: 100, height: 100)
                                         )
                                     
-                                    Text(userDataManager.currentUser?.name ?? "星语用户")
+                                    Text(authManager.currentUser?.username ?? userDataManager.currentUser?.name ?? "星语用户")
                                         .font(.system(size: 20, weight: .medium))
                                         .foregroundColor(.crystalWhite)
                                     
@@ -129,6 +131,33 @@ struct ProfileTab: View {
                                 subtitle: "版本信息和开发团队",
                                 action: { /* TODO */ }
                             )
+                            
+                            // 登出按钮
+                            Button(action: {
+                                showingLogoutAlert = true
+                            }) {
+                                GlassmorphicCard {
+                                    HStack(spacing: 15) {
+                                        Image(systemName: "arrow.right.square")
+                                            .font(.system(size: 24))
+                                            .foregroundColor(.red.opacity(0.8))
+                                            .frame(width: 40)
+                                        
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("退出登录")
+                                                .font(.system(size: 16, weight: .medium))
+                                                .foregroundColor(.red.opacity(0.8))
+                                            
+                                            Text("退出当前账号")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(.moonSilver.opacity(0.7))
+                                        }
+                                        
+                                        Spacer()
+                                    }
+                                }
+                            }
+                            .buttonStyle(PlainButtonStyle())
                         }
                         .padding(.horizontal)
                         
@@ -158,6 +187,16 @@ struct ProfileTab: View {
                 UserInfoInputView(iztroManager: IztroManager(), onComplete: {
                     // 更新完成后刷新界面
                 })
+            }
+            .alert("确认退出", isPresented: $showingLogoutAlert) {
+                Button("取消", role: .cancel) { }
+                Button("退出", role: .destructive) {
+                    Task {
+                        await authManager.signOut()
+                    }
+                }
+            } message: {
+                Text("确定要退出当前账号吗？")
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
