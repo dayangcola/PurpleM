@@ -285,25 +285,15 @@ struct PerfectPalaceCell: View {
                         )
                 )
             
-            VStack(spacing: 1) {
-                // 顶部：宫位名和干支
-                HStack {
-                    Text(palace.name)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundColor(.crystalWhite)
-                    
-                    Spacer()
-                    
-                    Text("\(palace.heavenlyStem)\(palace.earthlyBranch)")
-                        .font(.system(size: 9))
-                        .foregroundColor(.moonSilver.opacity(0.7))
-                }
-                .padding(.horizontal, 4)
-                .padding(.top, 3)
-                
-                // 命身标记
-                if palace.isSoulPalace == true || palace.isBodyPalace {
+            VStack(alignment: .leading, spacing: 2) {
+                // 顶部区域：宫位名、干支、命身标记
+                VStack(alignment: .leading, spacing: 2) {
                     HStack {
+                        Text(palace.name)
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.crystalWhite)
+                        
+                        // 命身标记
                         if palace.isSoulPalace == true {
                             Text("命")
                                 .font(.system(size: 8, weight: .bold))
@@ -326,26 +316,28 @@ struct PerfectPalaceCell: View {
                                         .fill(Color.mysticPink.opacity(0.2))
                                 )
                         }
+                        
                         Spacer()
+                        
+                        Text("\(palace.heavenlyStem)\(palace.earthlyBranch)")
+                            .font(.system(size: 9))
+                            .foregroundColor(.moonSilver.opacity(0.7))
                     }
-                    .padding(.horizontal, 3)
                 }
+                .padding(.horizontal, 4)
+                .padding(.top, 3)
                 
-                // 星耀显示区域 - 竖向文字横向排列
+                // 星耀显示区域 - 使用固定5列布局
                 let allStars = collectAllStars(palace: palace)
                 if !allStars.isEmpty {
-                    // 不使用ScrollView，直接显示所有内容
-                    VStack(alignment: .leading, spacing: 1) {
-                        WrappingHStack(alignment: .leading, spacing: 3) {
-                            ForEach(allStars, id: \.id) { starItem in
-                                VerticalStarView(item: starItem)
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 4)
-                    .padding(.bottom, 3)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                    .clipped() // 防止内容溢出
+                    FixedColumnsLayout(stars: allStars, 
+                                     horizontalSpacing: 1, 
+                                     verticalSpacing: 10)
+                        .padding(.horizontal, 3)
+                        .padding(.top, 3)
+                        .padding(.bottom, 2)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                        .clipped() // 防止内容溢出
                 }
                 
                 Spacer(minLength: 0)
@@ -422,31 +414,31 @@ struct VerticalStarView: View {
             // 星耀名称（竖向排列）
             ForEach(Array(item.name.enumerated()), id: \.offset) { _, char in
                 Text(String(char))
-                    .font(.system(size: 10, weight: item.type == .major ? .semibold : .regular))
+                    .font(.system(size: 9, weight: item.type == .major ? .semibold : .regular))
                     .foregroundColor(getStarColor())
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                    .frame(width: 12)
+                    .frame(width: 10)
             }
             
             // 亮度
             if let brightness = item.brightness, !brightness.isEmpty {
                 Text(brightness)
-                    .font(.system(size: 8))
+                    .font(.system(size: 7))
                     .foregroundColor(.gray.opacity(0.6))
-                    .frame(width: 12)
+                    .frame(width: 10)
             }
             
             // 四化
             if let mutagen = item.mutagen, !mutagen.isEmpty {
                 Text(mutagen)
-                    .font(.system(size: 9, weight: .bold))
+                    .font(.system(size: 8, weight: .bold))
                     .foregroundColor(getMutagenColor(mutagen))
-                    .frame(width: 12)
+                    .frame(width: 10)
             }
         }
-        .padding(.vertical, 2)
-        .padding(.horizontal, 1)
+        .padding(.vertical, 1)
+        .padding(.horizontal, 0)
     }
     
     private func getStarColor() -> Color {
@@ -479,46 +471,42 @@ struct VerticalStarView: View {
     }
 }
 
-// MARK: - 换行布局
-struct WrappingHStack<Content: View>: View {
-    let alignment: HorizontalAlignment
-    let spacing: CGFloat
-    let content: Content
+// MARK: - 固定列数布局
+struct FixedColumnsLayout: View {
+    let stars: [StarItem]
+    let columnsPerRow: Int = 5
+    let horizontalSpacing: CGFloat
+    let verticalSpacing: CGFloat
     
-    init(alignment: HorizontalAlignment = .leading, spacing: CGFloat = 8, @ViewBuilder content: () -> Content) {
-        self.alignment = alignment
-        self.spacing = spacing
-        self.content = content()
+    init(stars: [StarItem], horizontalSpacing: CGFloat = 3, verticalSpacing: CGFloat = 8) {
+        self.stars = stars
+        self.horizontalSpacing = horizontalSpacing
+        self.verticalSpacing = verticalSpacing
     }
     
     var body: some View {
-        GeometryReader { geometry in
-            self.generateContent(in: geometry)
+        VStack(alignment: .leading, spacing: verticalSpacing) {
+            ForEach(0..<rowCount, id: \.self) { row in
+                HStack(spacing: horizontalSpacing) {
+                    ForEach(0..<columnsInRow(row), id: \.self) { col in
+                        let index = row * columnsPerRow + col
+                        if index < stars.count {
+                            VerticalStarView(item: stars[index])
+                        }
+                    }
+                    Spacer() // 确保左对齐
+                }
+            }
         }
     }
     
-    private func generateContent(in geometry: GeometryProxy) -> some View {
-        var width = CGFloat.zero
-        var height = CGFloat.zero
-        
-        return ZStack(alignment: .topLeading) {
-            content
-                .alignmentGuide(.leading) { dimension in
-                    if abs(width - dimension.width) > geometry.size.width {
-                        width = 0
-                        height -= dimension.height + spacing
-                    }
-                    let result = width
-                    if dimension.width > 0 {
-                        width -= dimension.width + spacing
-                    }
-                    return result
-                }
-                .alignmentGuide(.top) { _ in
-                    let result = height
-                    return result
-                }
-        }
-        .frame(height: max(0, -height)) // 确保内容有足够高度
+    private var rowCount: Int {
+        (stars.count + columnsPerRow - 1) / columnsPerRow
+    }
+    
+    private func columnsInRow(_ row: Int) -> Int {
+        let startIndex = row * columnsPerRow
+        let remaining = stars.count - startIndex
+        return min(remaining, columnsPerRow)
     }
 }
