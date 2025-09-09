@@ -141,7 +141,7 @@ async function handleSignup(req, res, supabase) {
       });
     }
 
-    // 注册用户
+    // 注册用户（传递username到user metadata）
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -161,55 +161,32 @@ async function handleSignup(req, res, supabase) {
     
     console.log('User created:', authData.user?.id);
 
-    // 创建用户配置文件
-    const { error: profileError } = await supabase
+    // 注意：profile、quota和preferences会由数据库触发器自动创建
+    // 我们只需要等待一下让触发器完成
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // 验证profile是否创建成功
+    const { data: profile, error: profileError } = await supabase
       .from('profiles')
-      .upsert({
-        id: authData.user.id,
-        email: authData.user.email,
-        username: username,
-        subscription_tier: 'free',
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
+      .select('*')
+      .eq('id', authData.user.id)
+      .single();
 
     if (profileError) {
-      console.error('Profile creation error:', profileError);
-    }
-
-    // 初始化用户配额
-    const { error: quotaError } = await supabase
-      .from('user_ai_quotas')
-      .insert({
-        user_id: authData.user.id,
-        subscription_tier: 'free',
-        daily_limit: 50,
-        monthly_limit: 1000,
-        daily_used: 0,
-        monthly_used: 0,
-        total_tokens_used: 0,
-        daily_reset_at: new Date().toISOString().split('T')[0],
-        monthly_reset_at: new Date().toISOString()
-      });
-
-    if (quotaError) {
-      console.error('Quota initialization error:', quotaError);
-    }
-
-    // 初始化用户偏好
-    const { error: prefError } = await supabase
-      .from('user_ai_preferences')
-      .insert({
-        user_id: authData.user.id,
-        conversation_style: 'mystical',
-        response_length: 'medium',
-        language_complexity: 'normal',
-        auto_save_sessions: true,
-        show_interpretation_hints: true
-      });
-
-    if (prefError) {
-      console.error('Preferences initialization error:', prefError);
+      console.error('Profile not found after creation:', profileError);
+      // 如果触发器失败，手动创建
+      const { error: manualError } = await supabase
+        .from('profiles')
+        .insert({
+          id: authData.user.id,
+          email: authData.user.email,
+          username: username,
+          subscription_tier: 'free'
+        });
+      
+      if (manualError) {
+        console.error('Manual profile creation failed:', manualError);
+      }
     }
 
     const user = {
