@@ -11,21 +11,26 @@ NEXT_PUBLIC_SUPABASE_URL = https://pwisjdcnhgbnjlcxjzzs.supabase.co
 SUPABASE_SERVICE_ROLE_KEY = [你的service role key]
 ```
 
-### 2. OpenAI 配置（需要添加）
+### 2. Vercel AI Gateway 配置（必需）
 ```
-OPENAI_API_KEY = [你的OpenAI API Key]
+AI_GATEWAY_API_KEY = vck_[你的AI Gateway Key]
+```
+或
+```
+VERCEL_AI_GATEWAY_KEY = vck_[你的AI Gateway Key]
 ```
 
 获取方式：
-1. 访问 https://platform.openai.com/api-keys
-2. 创建新的API Key
-3. 复制并保存
+1. 访问 https://vercel.com/dashboard/[your-project]/settings/ai
+2. 或访问 https://vercel.com/docs/ai-gateway
+3. 创建 AI Gateway
+4. 复制 API Key（以 vck_ 开头）
+5. 添加到环境变量
 
-### 3. AI Gateway 配置（可选）
-如果你有 Vercel AI Gateway：
+### 3. OpenAI 配置（备选）
+如果 AI Gateway 不可用，可以添加：
 ```
-VERCEL_AI_GATEWAY_KEY = [你的Gateway Key]
-AI_GATEWAY_API_KEY = [同上]
+OPENAI_API_KEY = [你的OpenAI API Key]
 ```
 
 ## 验证配置

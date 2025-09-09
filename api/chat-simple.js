@@ -1,4 +1,4 @@
-// 简化版聊天API - 直接调用OpenAI
+// 简化版聊天API - 使用Vercel AI Gateway
 export default async function handler(req, res) {
   // CORS设置
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -46,15 +46,26 @@ export default async function handler(req, res) {
       { role: 'user', content: message }
     ];
 
-    // 调用OpenAI API
-    const openaiResponse = await fetch('https://api.openai.com/v1/chat/completions', {
+    // 获取AI Gateway密钥
+    const AI_GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_KEY;
+    
+    if (!AI_GATEWAY_KEY) {
+      console.error('No AI Gateway key configured');
+      return res.status(200).json({
+        response: '星辰正在重新排列，请稍后再试。请确保已配置AI Gateway。',
+        success: true
+      });
+    }
+
+    // 调用Vercel AI Gateway
+    const aiResponse = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`
+        'Authorization': `Bearer ${AI_GATEWAY_KEY}`
       },
       body: JSON.stringify({
-        model: 'gpt-3.5-turbo',
+        model: 'openai/gpt-3.5-turbo',  // 注意：使用 openai/ 前缀
         messages: messages,
         temperature: 0.8,
         max_tokens: 800,
@@ -62,22 +73,22 @@ export default async function handler(req, res) {
       })
     });
 
-    if (!openaiResponse.ok) {
-      const error = await openaiResponse.text();
-      console.error('OpenAI API error:', error);
+    if (!aiResponse.ok) {
+      const error = await aiResponse.text();
+      console.error('AI Gateway error:', error);
       
-      // 如果OpenAI失败，返回备用响应
+      // 如果AI Gateway失败，返回备用响应
       return res.status(200).json({
         response: '星辰正在重新排列，请稍后再试。让我们先静心等待片刻...',
         success: true
       });
     }
 
-    const data = await openaiResponse.json();
-    const aiResponse = data.choices[0]?.message?.content || '星语正在思考中...';
+    const data = await aiResponse.json();
+    const responseText = data.choices[0]?.message?.content || '星语正在思考中...';
 
     res.status(200).json({
-      response: aiResponse,
+      response: responseText,
       success: true
     });
 

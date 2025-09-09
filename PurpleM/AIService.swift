@@ -10,8 +10,8 @@ import SwiftUI
 
 // MARK: - AI配置
 struct AIConfig {
-    // 使用简化版聊天API
-    static let backendURL = "https://purple-m.vercel.app/api/chat-simple"
+    // 使用自动选择最佳服务的聊天API
+    static let backendURL = "https://purple-m.vercel.app/api/chat-auto"
     static let maxTokens = 1000
     static let temperature = 0.8
 }
