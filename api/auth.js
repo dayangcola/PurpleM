@@ -1,9 +1,17 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-);
+// 初始化Supabase客户端
+function getSupabaseClient() {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!supabaseUrl || !supabaseKey) {
+    console.error('Missing Supabase environment variables');
+    throw new Error('Supabase configuration missing');
+  }
+  
+  return createClient(supabaseUrl, supabaseKey);
+}
 
 export default async function handler(req, res) {
   // CORS设置
@@ -19,31 +27,34 @@ export default async function handler(req, res) {
   const { action } = req.query;
 
   try {
+    // 初始化Supabase客户端
+    const supabase = getSupabaseClient();
+    
     switch (action) {
       case 'login':
-        return await handleLogin(req, res);
+        return await handleLogin(req, res, supabase);
       case 'signup':
-        return await handleSignup(req, res);
+        return await handleSignup(req, res, supabase);
       case 'logout':
-        return await handleLogout(req, res);
+        return await handleLogout(req, res, supabase);
       case 'reset-password':
-        return await handleResetPassword(req, res);
+        return await handleResetPassword(req, res, supabase);
       case 'validate':
-        return await handleValidate(req, res);
+        return await handleValidate(req, res, supabase);
       default:
         return res.status(404).json({ error: 'Action not found' });
     }
   } catch (error) {
     console.error('Auth error:', error);
     res.status(500).json({ 
-      error: '服务器错误，请稍后重试',
+      error: error.message || '服务器错误，请稍后重试',
       success: false 
     });
   }
 }
 
 // 处理登录
-async function handleLogin(req, res) {
+async function handleLogin(req, res, supabase) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -91,12 +102,14 @@ async function handleLogin(req, res) {
 }
 
 // 处理注册
-async function handleSignup(req, res) {
+async function handleSignup(req, res, supabase) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const { email, password, username } = req.body;
+  
+  console.log('Signup request:', { email, username });
 
   if (!email || !password || !username) {
     return res.status(400).json({ 
@@ -110,90 +123,122 @@ async function handleSignup(req, res) {
     });
   }
 
-  const { data: existingUser } = await supabase
-    .from('profiles')
-    .select('username')
-    .eq('username', username)
-    .single();
+  try {
+    // 检查用户名是否已存在
+    const { data: existingUser, error: checkError } = await supabase
+      .from('profiles')
+      .select('username')
+      .eq('username', username)
+      .single();
 
-  if (existingUser) {
-    return res.status(400).json({ 
-      error: '该用户名已被使用' 
-    });
-  }
-
-  const { data: authData, error: authError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        username: username
-      }
+    if (checkError && checkError.code !== 'PGRST116') {
+      console.error('Check username error:', checkError);
     }
-  });
 
-  if (authError) {
-    return res.status(400).json({ 
-      error: authError.message || '注册失败' 
+    if (existingUser) {
+      return res.status(400).json({ 
+        error: '该用户名已被使用' 
+      });
+    }
+
+    // 注册用户
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          username: username
+        }
+      }
     });
-  }
 
-  await supabase
-    .from('profiles')
-    .upsert({
+    if (authError) {
+      console.error('Signup error:', authError);
+      return res.status(400).json({ 
+        error: authError.message || '注册失败' 
+      });
+    }
+    
+    console.log('User created:', authData.user?.id);
+
+    // 创建用户配置文件
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .upsert({
+        id: authData.user.id,
+        email: authData.user.email,
+        username: username,
+        subscription_tier: 'free',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+
+    if (profileError) {
+      console.error('Profile creation error:', profileError);
+    }
+
+    // 初始化用户配额
+    const { error: quotaError } = await supabase
+      .from('user_ai_quotas')
+      .insert({
+        user_id: authData.user.id,
+        subscription_tier: 'free',
+        daily_limit: 50,
+        monthly_limit: 1000,
+        daily_used: 0,
+        monthly_used: 0,
+        total_tokens_used: 0,
+        daily_reset_at: new Date().toISOString().split('T')[0],
+        monthly_reset_at: new Date().toISOString()
+      });
+
+    if (quotaError) {
+      console.error('Quota initialization error:', quotaError);
+    }
+
+    // 初始化用户偏好
+    const { error: prefError } = await supabase
+      .from('user_ai_preferences')
+      .insert({
+        user_id: authData.user.id,
+        conversation_style: 'mystical',
+        response_length: 'medium',
+        language_complexity: 'normal',
+        auto_save_sessions: true,
+        show_interpretation_hints: true
+      });
+
+    if (prefError) {
+      console.error('Preferences initialization error:', prefError);
+    }
+
+    const user = {
       id: authData.user.id,
       email: authData.user.email,
       username: username,
-      subscription_tier: 'free',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      avatarUrl: null,
+      subscriptionTier: 'free',
+      createdAt: authData.user.created_at
+    };
+
+    return res.status(200).json({
+      user,
+      access_token: authData.session?.access_token || null,
+      refresh_token: authData.session?.refresh_token || null,
+      success: true,
+      message: '注册成功！请查收邮件验证您的账号。'
     });
-
-  await supabase
-    .from('user_ai_quotas')
-    .insert({
-      user_id: authData.user.id,
-      subscription_tier: 'free',
-      daily_limit: 50,
-      monthly_limit: 1000,
-      daily_used: 0,
-      monthly_used: 0,
-      total_tokens_used: 0,
-      daily_reset_at: new Date().toISOString().split('T')[0],
-      monthly_reset_at: new Date().toISOString()
+  } catch (error) {
+    console.error('Unexpected error during signup:', error);
+    return res.status(500).json({
+      error: error.message || '注册过程中发生错误',
+      success: false
     });
-
-  await supabase
-    .from('user_ai_preferences')
-    .insert({
-      user_id: authData.user.id,
-      conversation_style: 'mystical',
-      response_length: 'medium',
-      language_complexity: 'normal',
-      auto_save_sessions: true,
-      show_interpretation_hints: true
-    });
-
-  const user = {
-    id: authData.user.id,
-    email: authData.user.email,
-    username: username,
-    avatarUrl: null,
-    subscriptionTier: 'free',
-    createdAt: authData.user.created_at
-  };
-
-  res.status(200).json({
-    user,
-    access_token: authData.session?.access_token || null,
-    refresh_token: authData.session?.refresh_token || null,
-    success: true,
-    message: '注册成功！请查收邮件验证您的账号。'
-  });
+  }
 }
 
 // 处理登出
-async function handleLogout(req, res) {
+async function handleLogout(req, res, supabase) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -214,7 +259,7 @@ async function handleLogout(req, res) {
 }
 
 // 处理密码重置
-async function handleResetPassword(req, res) {
+async function handleResetPassword(req, res, supabase) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -242,7 +287,7 @@ async function handleResetPassword(req, res) {
 }
 
 // 处理验证
-async function handleValidate(req, res) {
+async function handleValidate(req, res, supabase) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
