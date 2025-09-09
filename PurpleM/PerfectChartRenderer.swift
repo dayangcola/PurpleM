@@ -12,6 +12,8 @@ struct PerfectChartRenderer: View {
     let jsonData: String
     @State private var astrolabe: FullAstrolabe?
     @State private var selectedPalaceIndex: Int? = nil
+    @State private var showPalaceDetail = false
+    @State private var selectedPalace: FullPalace? = nil
     
     // 12宫格位置映射 - 根据地支固定位置
     // 标准紫微斗数布局：申在右上角，顺时针排列
@@ -43,11 +45,24 @@ struct PerfectChartRenderer: View {
                         astrolabe: astrolabe,
                         palaces: astrolabe.palaces,
                         earthlyBranchPositions: earthlyBranchPositions,
-                        selectedIndex: $selectedPalaceIndex
+                        selectedIndex: $selectedPalaceIndex,
+                        onPalaceTap: { palace in
+                            selectedPalace = palace
+                            showPalaceDetail = true
+                        }
                     )
                     .padding(.horizontal, 5)
                     .padding(.bottom, 10)
                 }
+                .overlay(
+                    Group {
+                        if showPalaceDetail, let palace = selectedPalace {
+                            PalaceDetailView(palace: palace, isPresented: $showPalaceDetail)
+                                .transition(.opacity.combined(with: .scale))
+                                .zIndex(999)
+                        }
+                    }
+                )
             } else {
                 ProgressView()
                     .progressViewStyle(CircularProgressViewStyle(tint: .starGold))
@@ -200,6 +215,7 @@ struct PerfectSquareChart: View {
     let palaces: [FullPalace]
     let earthlyBranchPositions: [String: (row: Int, col: Int)]
     @Binding var selectedIndex: Int?
+    let onPalaceTap: (FullPalace) -> Void
     
     var body: some View {
         GeometryReader { geometry in
@@ -299,6 +315,7 @@ struct PerfectSquareChart: View {
                     .onTapGesture {
                         withAnimation(.spring()) {
                             selectedIndex = selectedIndex == index ? nil : index
+                            onPalaceTap(palace)
                         }
                     }
                 }
