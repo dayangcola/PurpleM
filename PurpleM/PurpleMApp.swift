@@ -11,7 +11,7 @@ import SwiftUI
 struct PurpleMApp: App {
     var body: some Scene {
         WindowGroup {
-            ModernZiWeiView()  // 使用现代化星语时光主题UI
+            TabBarView()  // 使用新的Tab架构
         }
     }
 }
