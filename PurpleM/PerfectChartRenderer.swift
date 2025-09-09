@@ -209,18 +209,10 @@ struct PerfectSquareChart: View {
             let cellHeight = height / 3  // 高度方向只分3份，因为中宫占2格高度
             
             ZStack {
-                // 背景网格 - 使用不同的宽高
-                ForEach(0..<4) { row in
-                    ForEach(0..<4) { col in
-                        Rectangle()
-                            .stroke(Color.moonSilver.opacity(0.2), lineWidth: 0.5)
-                            .frame(width: cellWidth, height: cellHeight)
-                            .position(
-                                x: CGFloat(col) * cellWidth + cellWidth/2,
-                                y: CGFloat(row) * cellHeight + cellHeight/2
-                            )
-                    }
-                }
+                // 外框
+                Rectangle()
+                    .stroke(Color.moonSilver.opacity(0.3), lineWidth: 1)
+                    .frame(width: width, height: height)
                 
                 // 中宫
                 VStack(spacing: 8) {
@@ -239,21 +231,7 @@ struct PerfectSquareChart: View {
                         .foregroundColor(.crystalWhite)
                 }
                 .frame(width: cellWidth * 2 - 4, height: cellHeight * 2 - 4)
-                .background(
-                    RoundedRectangle(cornerRadius: 10)
-                        .fill(Color.cosmicPurple.opacity(0.1))
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 10)
-                        .stroke(
-                            LinearGradient(
-                                gradient: Gradient(colors: [Color.starGold.opacity(0.5), Color.mysticPink.opacity(0.5)]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
+                .background(Color.cosmicPurple.opacity(0.05))
                 .position(x: width/2, y: height/2)
                 
                 // 12宫位
@@ -295,16 +273,15 @@ struct PerfectPalaceCell: View {
     var body: some View {
         ZStack {
             // 背景
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.white.opacity(0.02))
+            Rectangle()
+                .fill(Color.black.opacity(0.01))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    Rectangle()
                         .stroke(
-                            palace.isSoulPalace == true ? Color.starGold :
-                            palace.isBodyPalace ? Color.mysticPink :
-                            isSelected ? Color.crystalWhite :
+                            palace.isSoulPalace == true ? Color.starGold.opacity(0.6) :
+                            palace.isBodyPalace ? Color.mysticPink.opacity(0.6) :
                             Color.moonSilver.opacity(0.3),
-                            lineWidth: palace.isSoulPalace == true || palace.isBodyPalace ? 2 : 0.5
+                            lineWidth: palace.isSoulPalace == true || palace.isBodyPalace ? 1.5 : 0.5
                         )
                 )
             
@@ -312,17 +289,17 @@ struct PerfectPalaceCell: View {
                 // 顶部：宫位名和干支
                 HStack {
                     Text(palace.name)
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.crystalWhite)
                     
                     Spacer()
                     
                     Text("\(palace.heavenlyStem)\(palace.earthlyBranch)")
-                        .font(.system(size: 8))
+                        .font(.system(size: 9))
                         .foregroundColor(.moonSilver.opacity(0.7))
                 }
-                .padding(.horizontal, 3)
-                .padding(.top, 2)
+                .padding(.horizontal, 4)
+                .padding(.top, 3)
                 
                 // 命身标记
                 if palace.isSoulPalace == true || palace.isBodyPalace {
@@ -358,13 +335,17 @@ struct PerfectPalaceCell: View {
                 let allStars = collectAllStars(palace: palace)
                 if !allStars.isEmpty {
                     // 不使用ScrollView，直接显示所有内容
-                    WrappingHStack(alignment: .leading, spacing: 2) {
-                        ForEach(allStars, id: \.id) { starItem in
-                            VerticalStarView(item: starItem)
+                    VStack(alignment: .leading, spacing: 1) {
+                        WrappingHStack(alignment: .leading, spacing: 3) {
+                            ForEach(allStars, id: \.id) { starItem in
+                                VerticalStarView(item: starItem)
+                            }
                         }
                     }
-                    .padding(.horizontal, 2)
-                    .frame(maxHeight: .infinity)
+                    .padding(.horizontal, 4)
+                    .padding(.bottom, 3)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .clipped() // 防止内容溢出
                 }
                 
                 Spacer(minLength: 0)
@@ -441,30 +422,31 @@ struct VerticalStarView: View {
             // 星耀名称（竖向排列）
             ForEach(Array(item.name.enumerated()), id: \.offset) { _, char in
                 Text(String(char))
-                    .font(.system(size: 8, weight: item.type == .major ? .semibold : .regular))
+                    .font(.system(size: 10, weight: item.type == .major ? .semibold : .regular))
                     .foregroundColor(getStarColor())
                     .lineLimit(1)
-                    .frame(width: 10)
+                    .minimumScaleFactor(0.8)
+                    .frame(width: 12)
             }
             
             // 亮度
             if let brightness = item.brightness, !brightness.isEmpty {
                 Text(brightness)
-                    .font(.system(size: 6))
+                    .font(.system(size: 8))
                     .foregroundColor(.gray.opacity(0.6))
-                    .frame(width: 10)
+                    .frame(width: 12)
             }
             
             // 四化
             if let mutagen = item.mutagen, !mutagen.isEmpty {
                 Text(mutagen)
-                    .font(.system(size: 7, weight: .bold))
+                    .font(.system(size: 9, weight: .bold))
                     .foregroundColor(getMutagenColor(mutagen))
-                    .frame(width: 10)
+                    .frame(width: 12)
             }
         }
-        .padding(.vertical, 1)
-        .padding(.horizontal, 0)
+        .padding(.vertical, 2)
+        .padding(.horizontal, 1)
     }
     
     private func getStarColor() -> Color {
