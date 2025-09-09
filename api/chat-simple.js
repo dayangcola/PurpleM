@@ -59,22 +59,24 @@ export default async function handler(req, res) {
       { role: 'user', content: message }
     ];
 
-    // 获取API密钥 - 优先使用AI_GATEWAY_API_KEY，回退到VERCEL_AI_GATEWAY_KEY
-    const AI_GATEWAY_KEY = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_AI_GATEWAY_KEY;
+    // 使用你配置的VERCEL_AI_GATEWAY_KEY
+    const VERCEL_AI_GATEWAY_KEY = process.env.VERCEL_AI_GATEWAY_KEY;
     
-    if (!AI_GATEWAY_KEY) {
-      throw new Error('Missing AI Gateway API key. Please set AI_GATEWAY_API_KEY in environment variables');
+    if (!VERCEL_AI_GATEWAY_KEY) {
+      throw new Error('Missing VERCEL_AI_GATEWAY_KEY in environment variables');
     }
     
-    // 调用Vercel AI Gateway - 使用正确的URL
+    console.log('Using AI Gateway with key:', VERCEL_AI_GATEWAY_KEY.substring(0, 10) + '...');
+    
+    // 调用Vercel AI Gateway - 使用正确的URL和模型格式
     const aiResponse = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${AI_GATEWAY_KEY}`,
+        'Authorization': `Bearer ${VERCEL_AI_GATEWAY_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'openai/gpt-3.5-turbo', // 使用provider/model格式
+        model: 'gpt-3.5-turbo', // 直接使用模型名，不加provider前缀
         messages,
         temperature: 0.8,
         max_tokens: 1000,
