@@ -241,7 +241,7 @@ class OfflineQueueManager: ObservableObject {
     
     // MARK: - 队列操作
     func enqueue(_ operation: OfflineOperation) {
-        guard queue.count < maxQueueSize else {
+        if queue.count >= maxQueueSize {
             print("离线队列已满，删除最旧的项")
             queue.removeFirst()
         }
