@@ -6,14 +6,31 @@
 //
 
 import SwiftUI
+import Combine
 
 struct ChatTab: View {
-    @StateObject private var aiService = AIService.shared
     @StateObject private var userDataManager = UserDataManager.shared
+    @StateObject private var settingsManager = SettingsManager.shared
+    @StateObject private var supabaseManager = SupabaseManager.shared
+    @StateObject private var networkMonitor = NetworkMonitor.shared
+    @StateObject private var offlineQueue = OfflineQueueManager.shared
     @State private var messages: [ChatMessage] = []
     @State private var inputText = ""
     @State private var isTyping = false
+    @State private var isInitializing = true
+    @State private var showQuotaAlert = false
     @State private var scrollProxy: ScrollViewProxy?
+    @State private var cancellables = Set<AnyCancellable>()
+    
+    // 动态获取AI服务
+    private var aiService: NSObject {
+        switch settingsManager.aiMode {
+        case .standard:
+            return AIService.shared
+        case .enhanced:
+            return EnhancedAIService.shared
+        }
+    }
     
     var body: some View {
         NavigationView {
@@ -38,6 +55,21 @@ struct ChatTab: View {
                             .foregroundColor(.crystalWhite)
                         
                         Spacer()
+                        
+                        // 网络状态指示器
+                        HStack(spacing: 4) {
+                            if !networkMonitor.isConnected {
+                                Image(systemName: "wifi.slash")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(.orange.opacity(0.8))
+                            }
+                            
+                            if offlineQueue.queueSize > 0 {
+                                Label("\(offlineQueue.queueSize)", systemImage: "arrow.triangle.2.circlepath")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.yellow.opacity(0.8))
+                            }
+                        }
                         
                         Button(action: clearChat) {
                             Image(systemName: "arrow.counterclockwise.circle")
@@ -67,13 +99,13 @@ struct ChatTab: View {
                                 }
                                 .padding()
                             }
-                            .onChange(of: messages.count) { _ in
+                            .onChange(of: messages.count) { oldCount, newCount in
                                 withAnimation {
                                     proxy.scrollTo(messages.last?.id, anchor: .bottom)
                                 }
                             }
-                            .onChange(of: isTyping) { typing in
-                                if typing {
+                            .onChange(of: isTyping) { oldValue, newValue in
+                                if newValue {
                                     withAnimation {
                                         proxy.scrollTo("typing", anchor: .bottom)
                                     }
@@ -88,7 +120,7 @@ struct ChatTab: View {
                     // 输入区域
                     ChatInputBar(
                         text: $inputText,
-                        isLoading: aiService.isLoading,
+                        isLoading: isTyping,
                         onSend: sendMessage
                     )
                 }
@@ -96,6 +128,16 @@ struct ChatTab: View {
             .navigationBarHidden(true)
             .onAppear {
                 loadChatHistory()
+                setupAIModeListener()
+                initializeCloudServices()
+            }
+            .alert("配额提醒", isPresented: $showQuotaAlert) {
+                Button("了解升级", role: .none) {
+                    // TODO: 跳转到订阅页面
+                }
+                Button("稍后", role: .cancel) { }
+            } message: {
+                Text("升级到专业版，享受无限对话和更多功能")
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())
@@ -122,7 +164,19 @@ struct ChatTab: View {
         
         // 发送到AI服务
         Task {
-            let response = await aiService.sendMessage(messageText)
+            let response: String
+            
+            // 根据AI模式和网络状态选择合适的方法
+            if settingsManager.aiMode == .standard {
+                response = await AIService.shared.sendMessage(messageText)
+            } else {
+                // 增强版支持云端同步
+                if AuthManager.shared.currentUser != nil && networkMonitor.isConnected {
+                    response = await EnhancedAIService.shared.sendMessageWithCloud(messageText)
+                } else {
+                    response = await EnhancedAIService.shared.sendMessage(messageText)
+                }
+            }
             
             await MainActor.run {
                 isTyping = false
@@ -136,6 +190,11 @@ struct ChatTab: View {
                 )
                 messages.append(aiMessage)
                 saveChatHistory()
+                
+                // 检查是否需要显示配额提醒
+                if response.contains("免费额度已用完") {
+                    showQuotaAlert = true
+                }
             }
         }
     }
@@ -149,7 +208,12 @@ struct ChatTab: View {
     // 清空聊天
     private func clearChat() {
         messages = []
-        aiService.resetConversation()
+        // 重置对应的AI服务
+        if settingsManager.aiMode == .standard {
+            AIService.shared.resetConversation()
+        } else {
+            EnhancedAIService.shared.resetConversation()
+        }
         UserDefaults.standard.removeObject(forKey: "ChatHistory")
     }
     
@@ -169,12 +233,66 @@ struct ChatTab: View {
             messages = history
         }
     }
+    
+    // 设置AI模式监听器
+    private func setupAIModeListener() {
+        NotificationCenter.default.publisher(for: .aiModeChanged)
+            .sink { _ in
+                // AI模式改变时清空聊天并重置
+                clearChat()
+                // 显示模式切换提示
+                let modeMessage = ChatMessage(
+                    id: UUID(),
+                    content: "已切换到\(settingsManager.aiMode.rawValue)模式 ✨",
+                    isFromUser: false,
+                    timestamp: Date()
+                )
+                messages.append(modeMessage)
+            }
+            .store(in: &cancellables)
+    }
+    
+    // 初始化云端服务
+    private func initializeCloudServices() {
+        guard settingsManager.aiMode == .enhanced else { return }
+        
+        Task {
+            isInitializing = true
+            
+            // 初始化增强版AI的云端数据
+            if AuthManager.shared.currentUser != nil {
+                await EnhancedAIService.shared.initializeFromCloud()
+                
+                // 加载用户配额信息
+                if let userId = AuthManager.shared.currentUser?.id {
+                    _ = try? await SupabaseManager.shared.getUserQuota(userId: userId)
+                }
+            }
+            
+            await MainActor.run {
+                isInitializing = false
+            }
+        }
+    }
 }
 
 // MARK: - 欢迎消息视图
 struct WelcomeMessageView: View {
     let onQuestionTap: (String) -> Void
     @StateObject private var userDataManager = UserDataManager.shared
+    @StateObject private var settingsManager = SettingsManager.shared
+    
+    private func getQuestions() -> [String] {
+        if settingsManager.aiMode == .enhanced {
+            // 增强版提供的智能问题
+            return EnhancedAIService.shared.suggestedQuestions
+        } else {
+            // 标准版的基础问题
+            return AIService.getQuickQuestions(
+                hasChart: userDataManager.hasGeneratedChart
+            )
+        }
+    }
     
     var body: some View {
         ScrollView {
@@ -228,12 +346,9 @@ struct WelcomeMessageView: View {
                         .font(.system(size: 14))
                         .foregroundColor(.moonSilver.opacity(0.7))
                     
-                    let questions = AIService.getQuickQuestions(
-                        hasChart: userDataManager.hasGeneratedChart
-                    )
-                    
+                    // 根据AI模式获取不同的快捷问题
                     LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                        ForEach(questions, id: \.self) { question in
+                        ForEach(getQuestions(), id: \.self) { question in
                             QuickQuestionButton(text: question) {
                                 onQuestionTap(question)
                             }

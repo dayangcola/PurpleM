@@ -179,7 +179,12 @@ class AIService: NSObject, ObservableObject, URLSessionDelegate {
                     hasChart: UserDataManager.shared.currentChart != nil
                 )
             }
-            return nil
+            // 提供默认值，避免API报错
+            return BackendChatRequest.UserInfoData(
+                name: "星语用户",
+                gender: "未知",
+                hasChart: false
+            )
         }()
         
         // 创建请求

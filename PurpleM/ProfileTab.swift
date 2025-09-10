@@ -13,6 +13,8 @@ struct ProfileTab: View {
     @State private var showEditUserInfo = false
     @State private var userAvatar = "person.circle.fill"
     @State private var showingLogoutAlert = false
+    @State private var showSettings = false
+    @State private var showSupabaseTest = false
     
     var body: some View {
         NavigationView {
@@ -113,7 +115,7 @@ struct ProfileTab: View {
                                 icon: "gearshape.circle",
                                 title: "应用设置",
                                 subtitle: "通知、主题、隐私等设置",
-                                action: { /* TODO */ }
+                                action: { showSettings = true }
                             )
                             
                             // 帮助与反馈
@@ -131,6 +133,16 @@ struct ProfileTab: View {
                                 subtitle: "版本信息和开发团队",
                                 action: { /* TODO */ }
                             )
+                            
+                            // Supabase测试（调试模式）
+                            #if DEBUG
+                            ProfileMenuItem(
+                                icon: "testtube.2",
+                                title: "测试Supabase连接",
+                                subtitle: "调试工具：测试云端服务",
+                                action: { showSupabaseTest = true }
+                            )
+                            #endif
                             
                             // 登出按钮
                             Button(action: {
@@ -197,6 +209,12 @@ struct ProfileTab: View {
                 }
             } message: {
                 Text("确定要退出当前账号吗？")
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
+            .sheet(isPresented: $showSupabaseTest) {
+                TestSupabaseConnection()
             }
         }
         .navigationViewStyle(StackNavigationViewStyle())

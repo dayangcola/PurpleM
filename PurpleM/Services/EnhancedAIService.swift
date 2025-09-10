@@ -409,7 +409,7 @@ class EnhancedAIService: NSObject, ObservableObject {
         }
         
         // 检查是否接近大运交替
-        if let chart = UserDataManager.shared.currentChart {
+        if UserDataManager.shared.currentChart != nil {
             // 这里需要实际的大运计算逻辑
             // reminders.append("• 您即将进入新的大运周期，建议提前规划")
         }
