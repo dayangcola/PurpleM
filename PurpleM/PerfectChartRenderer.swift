@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import UIKit
 
 // MARK: - 完美版星盘渲染器
 struct PerfectChartRenderer: View {
@@ -14,6 +15,7 @@ struct PerfectChartRenderer: View {
     @State private var selectedPalaceIndex: Int? = nil
     @State private var showPalaceDetail = false
     @State private var selectedPalace: FullPalace? = nil
+    @State private var sanfangSizhengIndices: Set<Int> = []  // 三方四正宫位索引
     
     // 12宫格位置映射 - 根据地支固定位置
     // 标准紫微斗数布局：申在右上角，顺时针排列
@@ -32,6 +34,15 @@ struct PerfectChartRenderer: View {
         "未": (0, 2), // 上边
     ]
     
+    // MARK: - 计算三方四正
+    private func calculateSanfangSizheng(for index: Int) -> Set<Int> {
+        var indices = Set<Int>()
+        indices.insert(index)  // 本宫
+        indices.insert((index + 6) % 12)  // 对宫
+        indices.insert((index + 4) % 12)  // 三合宫1
+        indices.insert((index + 8) % 12)  // 三合宫2
+        return indices
+    }
     
     var body: some View {
         ZStack {
@@ -40,15 +51,52 @@ struct PerfectChartRenderer: View {
             
             if let astrolabe = astrolabe {
                 VStack(spacing: 10) {
+                    // 三方四正提示
+                    if !sanfangSizhengIndices.isEmpty {
+                        HStack(spacing: 20) {
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(Color.starGold)
+                                    .frame(width: 10, height: 10)
+                                Text("本宫")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.crystalWhite)
+                            }
+                            HStack(spacing: 5) {
+                                Circle()
+                                    .fill(Color.mysticPink.opacity(0.8))
+                                    .frame(width: 10, height: 10)
+                                Text("三方四正")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.crystalWhite)
+                            }
+                            Text("（对宫、三合宫）")
+                                .font(.system(size: 11))
+                                .foregroundColor(.moonSilver.opacity(0.7))
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.white.opacity(0.05))
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                    
                     // 完美方形12宫格
                     PerfectSquareChart(
                         astrolabe: astrolabe,
                         palaces: astrolabe.palaces,
                         earthlyBranchPositions: earthlyBranchPositions,
                         selectedIndex: $selectedPalaceIndex,
+                        sanfangSizhengIndices: $sanfangSizhengIndices,
                         onPalaceTap: { palace in
                             selectedPalace = palace
                             showPalaceDetail = true
+                            // 计算并高亮三方四正
+                            if let index = selectedPalaceIndex {
+                                sanfangSizhengIndices = calculateSanfangSizheng(for: index)
+                            }
                         }
                     )
                     .padding(.horizontal, 5)
@@ -126,6 +174,19 @@ struct PerfectChartRenderer: View {
                     print("宫位 \(dict["name"] ?? ""): 杂曜 = \(adjectiveStars)")
                 }
                 
+                // 解析大运数据
+                var decadal: Decadal? = nil
+                if let decadalDict = dict["decadal"] as? [String: Any],
+                   let range = decadalDict["range"] as? [Int] {
+                    decadal = Decadal(
+                        range: range,
+                        heavenlyStem: decadalDict["heavenlyStem"] as? String ?? "",
+                        earthlyBranch: decadalDict["earthlyBranch"] as? String ?? "",
+                        palaceNames: decadalDict["palaceNames"] as? [String] ?? [],
+                        stars: nil
+                    )
+                }
+                
                 let palace = FullPalace(
                     index: dict["index"] as? Int ?? 0,
                     name: dict["name"] as? String ?? "",
@@ -141,7 +202,7 @@ struct PerfectChartRenderer: View {
                     boshi12: dict["boshi12"] as? [String],
                     jiangqian12: dict["jiangqian12"] as? [String],
                     suiqian12: dict["suiqian12"] as? [String],
-                    decadal: nil,
+                    decadal: decadal,
                     ages: dict["ages"] as? [Int]
                 )
                 
@@ -215,6 +276,7 @@ struct PerfectSquareChart: View {
     let palaces: [FullPalace]
     let earthlyBranchPositions: [String: (row: Int, col: Int)]
     @Binding var selectedIndex: Int?
+    @Binding var sanfangSizhengIndices: Set<Int>
     let onPalaceTap: (FullPalace) -> Void
     
     var body: some View {
@@ -304,6 +366,7 @@ struct PerfectSquareChart: View {
                     PerfectPalaceCell(
                         palace: palace,
                         isSelected: selectedIndex == index,
+                        isSanfangSizheng: sanfangSizhengIndices.contains(index),
                         cellWidth: cellWidth,
                         cellHeight: cellHeight
                     )
@@ -314,9 +377,25 @@ struct PerfectSquareChart: View {
                     )
                     .onTapGesture {
                         withAnimation(.spring()) {
-                            selectedIndex = selectedIndex == index ? nil : index
-                            onPalaceTap(palace)
+                            if selectedIndex == index {
+                                // 再次点击同一宫位，取消选择
+                                selectedIndex = nil
+                                sanfangSizhengIndices = []
+                            } else {
+                                // 点击新宫位 - 高亮三方四正
+                                selectedIndex = index
+                                // 计算并高亮三方四正
+                                let indices = Set<Int>([index, (index + 6) % 12, (index + 4) % 12, (index + 8) % 12])
+                                sanfangSizhengIndices = indices
+                            }
                         }
+                    }
+                    .onLongPressGesture(minimumDuration: 0.5) {
+                        // 长按显示宫位详情
+                        onPalaceTap(palace)
+                        // 触觉反馈
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                        impactFeedback.impactOccurred()
                     }
                 }
             }
@@ -330,14 +409,19 @@ struct PerfectSquareChart: View {
 struct PerfectPalaceCell: View {
     let palace: FullPalace
     let isSelected: Bool
+    let isSanfangSizheng: Bool
     let cellWidth: CGFloat
     let cellHeight: CGFloat
     
     var body: some View {
         ZStack {
-            // 背景 - 移除单独的边框，因为已经在主网格中绘制
+            // 背景和边框效果
             Rectangle()
-                .fill(Color.black.opacity(0.01))
+                .fill(backgroundColor())
+                .overlay(
+                    Rectangle()
+                        .stroke(borderColor(), lineWidth: borderWidth())
+                )
             
             VStack(alignment: .leading, spacing: 2) {
                 // 顶部区域：宫位名、干支、命身标记
@@ -377,6 +461,7 @@ struct PerfectPalaceCell: View {
                             .font(.system(size: 9))
                             .foregroundColor(.moonSilver.opacity(0.7))
                     }
+                    
                 }
                 .padding(.horizontal, 4)
                 .padding(.top, 3)
@@ -395,6 +480,58 @@ struct PerfectPalaceCell: View {
                 }
                 
                 Spacer(minLength: 0)
+                
+                // 底部年份信息 - 类似截图风格
+                VStack(alignment: .leading, spacing: 1) {
+                    // 流年信息 - 显示具体年份
+                    if let ages = palace.ages, !ages.isEmpty {
+                        let yearInfo = getYearInfoForPalace(ages: ages)
+                        let isCurrentYear = isCurrentYearPalace(palace: palace)
+                        HStack(spacing: 2) {
+                            // 只在当前流年宫位显示"流年:"文字
+                            if isCurrentYear {
+                                Text("流年:")
+                                    .font(.system(size: 7))
+                                    .foregroundColor(.cyan.opacity(0.8))
+                            }
+                            Text(yearInfo)
+                                .font(.system(size: 7, weight: .medium))
+                                .foregroundColor(isCurrentYear ? .cyan : .gray.opacity(0.8))
+                            
+                            // 当前流年标记
+                            if isCurrentYear {
+                                Text("◀")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(.cyan)
+                            }
+                        }
+                    }
+                    
+                    // 大运信息
+                    if let decadal = palace.decadal {
+                        let isCurrentDecadal = isInCurrentDecadal(decadal: decadal)
+                        HStack(spacing: 2) {
+                            // 只在当前大运期间显示"大运:"前缀
+                            if isCurrentDecadal {
+                                Text("大运:")
+                                    .font(.system(size: 7, weight: .bold))
+                                    .foregroundColor(.cyan)
+                            }
+                            Text("\(decadal.range[0])-\(decadal.range[1])")
+                                .font(.system(size: 8, weight: .medium))
+                                .foregroundColor(isCurrentDecadal ? .cyan : .gray.opacity(0.7))
+                            
+                            // 当前大运标记箭头
+                            if isCurrentDecadal {
+                                Text("◀")
+                                    .font(.system(size: 8))
+                                    .foregroundColor(.cyan)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 4)
+                .padding(.bottom, 3)
             }
         }
     }
@@ -443,6 +580,106 @@ struct PerfectPalaceCell: View {
         }
         
         return items
+    }
+    
+    // MARK: - 获取宫位的流年信息（具体年份）
+    private func getYearInfoForPalace(ages: [Int]) -> String {
+        guard !ages.isEmpty else {
+            return ""
+        }
+        
+        // 生成该宫位对应的所有流年（12年一个循环，直到120岁）
+        var allAges: [Int] = []
+        if let firstAge = ages.first {
+            // 从第一个年龄开始，每12年一个循环，直到120岁
+            var currentAge = firstAge
+            while currentAge <= 120 {
+                allAges.append(currentAge)
+                currentAge += 12
+            }
+        }
+        
+        // 显示前10个年龄值，用逗号分隔
+        let displayAges = Array(allAges.prefix(10))
+        return displayAges.map { String($0) }.joined(separator: ",")
+    }
+    
+    // MARK: - 判断是否在当前大运期间
+    private func isInCurrentDecadal(decadal: Decadal) -> Bool {
+        // 获取当前年份和用户出生年份
+        let currentYear = Calendar.current.component(.year, from: Date())
+        
+        if let birthDate = UserDataManager.shared.currentUser?.birthDate {
+            let birthYear = Calendar.current.component(.year, from: birthDate)
+            // 计算虚岁
+            let currentAge = currentYear - birthYear + 1
+            
+            // 检查当前年龄是否在大运范围内
+            return currentAge >= decadal.range[0] && currentAge <= decadal.range[1]
+        }
+        
+        return false
+    }
+    
+    // MARK: - 判断当前年份宫位
+    private func isCurrentYearPalace(palace: FullPalace) -> Bool {
+        // 获取当前年份
+        let currentYear = Calendar.current.component(.year, from: Date())
+        
+        // 如果有ages数组，检查当前年龄对应的虚岁是否在其中
+        if let ages = palace.ages {
+            // 需要从用户数据中获取出生年份来计算当前虚岁
+            // 这里先使用一个简单的逻辑：检查ages数组是否包含合理的年龄值
+            let userBirthYear: Int? = UserDataManager.shared.currentUser?.birthDate != nil ? 
+                Calendar.current.component(.year, from: UserDataManager.shared.currentUser!.birthDate) : nil
+            
+            if let birthYear = userBirthYear {
+                // 计算虚岁（中国传统算法：当前年份 - 出生年份 + 1）
+                let currentAge = currentYear - birthYear + 1
+                
+                // 检查当前虚岁是否在这个宫位的ages数组中
+                // 通常ages数组包含12的倍数，表示该宫位在哪些年龄是流年宫
+                for age in ages {
+                    // 流年宫位按12年循环，检查是否匹配
+                    if (currentAge - age) % 12 == 0 && currentAge >= age {
+                        return true
+                    }
+                }
+            }
+        }
+        
+        return false
+    }
+    
+    // MARK: - 样式辅助方法
+    private func backgroundColor() -> Color {
+        if isSelected {
+            return Color.starGold.opacity(0.1)
+        } else if isSanfangSizheng {
+            return Color.mysticPink.opacity(0.05)
+        } else {
+            return Color.black.opacity(0.01)
+        }
+    }
+    
+    private func borderColor() -> Color {
+        if isSelected {
+            return Color.starGold.opacity(0.8)
+        } else if isSanfangSizheng {
+            return Color.mysticPink.opacity(0.5)
+        } else {
+            return Color.clear
+        }
+    }
+    
+    private func borderWidth() -> CGFloat {
+        if isSelected {
+            return 2
+        } else if isSanfangSizheng {
+            return 1.5
+        } else {
+            return 0
+        }
     }
 }
 
@@ -539,22 +776,45 @@ struct FixedColumnsLayout: View {
     
     var body: some View {
         VStack(alignment: .leading, spacing: verticalSpacing) {
-            ForEach(0..<rowCount, id: \.self) { row in
+            // 如果星星数量大于10个，特殊处理
+            if stars.count > 10 {
+                // 第一行显示5个
                 HStack(alignment: .top, spacing: horizontalSpacing) {
-                    ForEach(0..<columnsInRow(row), id: \.self) { col in
-                        let index = row * columnsPerRow + col
+                    ForEach(0..<5, id: \.self) { index in
                         if index < stars.count {
                             VerticalStarView(item: stars[index])
                         }
                     }
-                    Spacer() // 确保左对齐
+                    Spacer()
+                }
+                
+                // 第二行显示剩余所有（可能会比较拥挤）
+                HStack(alignment: .top, spacing: max(1, horizontalSpacing - 1)) {
+                    ForEach(5..<stars.count, id: \.self) { index in
+                        VerticalStarView(item: stars[index])
+                    }
+                    Spacer()
+                }
+            } else {
+                // 10个或更少，按原来的逻辑显示
+                ForEach(0..<rowCount, id: \.self) { row in
+                    HStack(alignment: .top, spacing: horizontalSpacing) {
+                        ForEach(0..<columnsInRow(row), id: \.self) { col in
+                            let index = row * columnsPerRow + col
+                            if index < stars.count {
+                                VerticalStarView(item: stars[index])
+                            }
+                        }
+                        Spacer() // 确保左对齐
+                    }
                 }
             }
         }
     }
     
     private var rowCount: Int {
-        (stars.count + columnsPerRow - 1) / columnsPerRow
+        // 最多两行
+        min(2, (stars.count + columnsPerRow - 1) / columnsPerRow)
     }
     
     private func columnsInRow(_ row: Int) -> Int {

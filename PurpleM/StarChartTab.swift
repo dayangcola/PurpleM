@@ -12,6 +12,7 @@ struct StarChartTab: View {
     @StateObject private var userDataManager = UserDataManager.shared
     @State private var showInputView = false
     @State private var isGeneratingChart = false
+    @State private var selectedTab = 0 // 0:本命盘, 1:大运, 2:流年, 3:流月, 4:流日
     
     var body: some View {
         NavigationView {
@@ -22,10 +23,34 @@ struct StarChartTab: View {
                     // 首次使用，显示欢迎界面
                     WelcomeView(showInputView: $showInputView)
                 } else if userDataManager.canShowChart() {
-                    // 已有星盘数据，直接显示
-                    if let chartData = userDataManager.currentChart {
-                        PerfectChartRenderer(jsonData: chartData.jsonData)
-                            .transition(.opacity)
+                    VStack(spacing: 0) {
+                        // 分段控制器
+                        ChartTabSelector(selectedTab: $selectedTab)
+                            .padding(.horizontal)
+                            .padding(.top, 10)
+                        
+                        // 根据选择显示不同内容
+                        switch selectedTab {
+                        case 0: // 本命盘
+                            if let chartData = userDataManager.currentChart {
+                                PerfectChartRenderer(jsonData: chartData.jsonData)
+                                    .transition(.opacity)
+                            }
+                        case 1: // 大运
+                            DecadalAnalysisView(iztroManager: iztroManager)
+                                .transition(.opacity)
+                        case 2: // 流年
+                            YearlyFortuneView(iztroManager: iztroManager)
+                                .transition(.opacity)
+                        case 3: // 流月
+                            MonthlyFortuneView(iztroManager: iztroManager)
+                                .transition(.opacity)
+                        case 4: // 流日
+                            DailyFortuneDetailView(iztroManager: iztroManager)
+                                .transition(.opacity)
+                        default:
+                            EmptyView()
+                        }
                     }
                 } else if userDataManager.needsChartGeneration() {
                     // 有用户信息但没有星盘，自动生成
@@ -224,6 +249,94 @@ struct GeneratingChartView: View {
         .onAppear {
             isAnimating = true
         }
+    }
+}
+
+// MARK: - 星盘类型选择器
+struct ChartTabSelector: View {
+    @Binding var selectedTab: Int
+    
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ChartTabButton(
+                    title: "本命",
+                    icon: "star.circle.fill",
+                    isSelected: selectedTab == 0,
+                    action: { selectedTab = 0 }
+                )
+                
+                ChartTabButton(
+                    title: "大运",
+                    icon: "calendar.circle.fill",
+                    isSelected: selectedTab == 1,
+                    action: { selectedTab = 1 }
+                )
+                
+                ChartTabButton(
+                    title: "流年",
+                    icon: "sparkles",
+                    isSelected: selectedTab == 2,
+                    action: { selectedTab = 2 }
+                )
+                
+                ChartTabButton(
+                    title: "流月",
+                    icon: "moon.circle.fill",
+                    isSelected: selectedTab == 3,
+                    action: { selectedTab = 3 }
+                )
+                
+                ChartTabButton(
+                    title: "流日",
+                    icon: "sun.max.fill",
+                    isSelected: selectedTab == 4,
+                    action: { selectedTab = 4 }
+                )
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.white.opacity(0.05))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(Color.moonSilver.opacity(0.2), lineWidth: 1)
+            )
+        }
+    }
+}
+
+// MARK: - 单个选项按钮
+struct ChartTabButton: View {
+    let title: String
+    let icon: String
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 14))
+                Text(title)
+                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+            }
+            .foregroundColor(isSelected ? .starGold : .moonSilver)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(
+                isSelected ?
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.starGold.opacity(0.15))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(Color.starGold.opacity(0.3), lineWidth: 1)
+                    ) : nil
+            )
+        }
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
     }
 }
 

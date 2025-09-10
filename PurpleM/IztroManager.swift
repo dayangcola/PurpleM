@@ -23,7 +23,12 @@ class IztroManager: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMe
     private func setupWebView() {
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "iztroHandler")
-        config.preferences.javaScriptEnabled = true
+        // 使用新的API来启用JavaScript（iOS 14.0+）
+        if #available(iOS 14.0, *) {
+            config.defaultWebpagePreferences.allowsContentJavaScript = true
+        } else {
+            config.preferences.javaScriptEnabled = true
+        }
         
         // 允许文件访问
         config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
@@ -82,6 +87,118 @@ class IztroManager: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMe
         }
     }
     
+    // MARK: - 大运数据获取
+    func getDecadalData(age: Int, completion: @escaping (DecadalData?) -> Void) {
+        guard isReady else {
+            print("WebView not ready")
+            completion(nil)
+            return
+        }
+        
+        let jsCode = "getDecadalData(\(age))"
+        
+        webView?.evaluateJavaScript(jsCode) { result, error in
+            if let error = error {
+                print("获取大运数据失败: \(error)")
+                completion(nil)
+                return
+            }
+            
+            if let jsonString = result as? String,
+               let data = jsonString.data(using: .utf8),
+               let response = try? JSONDecoder().decode(DecadalResponse.self, from: data),
+               response.success {
+                completion(response.data)
+            } else {
+                completion(nil)
+            }
+        }
+    }
+    
+    // MARK: - 流年数据获取
+    func getYearlyData(year: Int, completion: @escaping (YearlyData?) -> Void) {
+        guard isReady else {
+            print("WebView not ready")
+            completion(nil)
+            return
+        }
+        
+        let jsCode = "getYearlyData(\(year))"
+        
+        webView?.evaluateJavaScript(jsCode) { result, error in
+            if let error = error {
+                print("获取流年数据失败: \(error)")
+                completion(nil)
+                return
+            }
+            
+            if let jsonString = result as? String,
+               let data = jsonString.data(using: .utf8),
+               let response = try? JSONDecoder().decode(YearlyResponse.self, from: data),
+               response.success {
+                completion(response.data)
+            } else {
+                completion(nil)
+            }
+        }
+    }
+    
+    // MARK: - 流月数据获取
+    func getMonthlyData(year: Int, month: Int, completion: @escaping (MonthlyData?) -> Void) {
+        guard isReady else {
+            print("WebView not ready")
+            completion(nil)
+            return
+        }
+        
+        let jsCode = "getMonthlyData(\(year), \(month))"
+        
+        webView?.evaluateJavaScript(jsCode) { result, error in
+            if let error = error {
+                print("获取流月数据失败: \(error)")
+                completion(nil)
+                return
+            }
+            
+            if let jsonString = result as? String,
+               let data = jsonString.data(using: .utf8),
+               let response = try? JSONDecoder().decode(MonthlyResponse.self, from: data),
+               response.success {
+                completion(response.data)
+            } else {
+                completion(nil)
+            }
+        }
+    }
+    
+    // MARK: - 流日数据获取
+    func getDailyData(year: Int, month: Int, day: Int, completion: @escaping (DailyData?) -> Void) {
+        guard isReady else {
+            print("WebView not ready")
+            completion(nil)
+            return
+        }
+        
+        let jsCode = "getDailyData(\(year), \(month), \(day))"
+        
+        webView?.evaluateJavaScript(jsCode) { result, error in
+            if let error = error {
+                print("获取流日数据失败: \(error)")
+                completion(nil)
+                return
+            }
+            
+            if let jsonString = result as? String,
+               let data = jsonString.data(using: .utf8),
+               let response = try? JSONDecoder().decode(DailyResponse.self, from: data),
+               response.success {
+                completion(response.data)
+            } else {
+                completion(nil)
+            }
+        }
+    }
+    
     // MARK: - WKNavigationDelegate
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         print("WebView loaded successfully")
@@ -131,4 +248,92 @@ class IztroManager: NSObject, ObservableObject, WKNavigationDelegate, WKScriptMe
             }
         }
     }
+}
+
+// MARK: - 运限数据结构
+
+// 大运数据
+struct DecadalData: Codable {
+    let palace: String
+    let palaceIndex: Int
+    let range: [Int]
+    let heavenlyStem: String
+    let earthlyBranch: String
+    // stars字段改为可选的字符串数组，因为Any类型不符合Codable
+    let stars: [String]?
+}
+
+struct DecadalResponse: Codable {
+    let success: Bool
+    let data: DecadalData?
+    let error: String?
+}
+
+// 流年数据
+struct YearlyData: Codable {
+    let year: Int
+    let palaces: [YearlyPalace]
+    let mutagen: [String]
+}
+
+struct YearlyPalace: Codable {
+    let name: String
+    let index: Int
+    let jiangqian12: [String]
+    let suiqian12: [String]
+}
+
+struct YearlyResponse: Codable {
+    let success: Bool
+    let data: YearlyData?
+    let error: String?
+}
+
+// MARK: - 流月数据结构
+struct MonthlyData: Codable {
+    let year: Int
+    let month: Int
+    let palaces: [MonthlyPalace]
+    let mainInfluence: String
+    let scores: FortuneScores
+}
+
+struct MonthlyPalace: Codable {
+    let name: String
+    let index: Int
+    let isMonthlyFocus: Bool
+}
+
+struct MonthlyResponse: Codable {
+    let success: Bool
+    let data: MonthlyData?
+    let error: String?
+}
+
+// MARK: - 流日数据结构
+struct DailyData: Codable {
+    let year: Int
+    let month: Int
+    let day: Int
+    let weekday: Int
+    let lunarDay: String
+    let luckyHours: [String]
+    let suitable: [String]
+    let avoid: [String]
+    let scores: FortuneScores
+    let mainPalace: Int
+}
+
+struct FortuneScores: Codable {
+    let overall: Int
+    let career: Int
+    let love: Int
+    let wealth: Int
+    let health: Int
+}
+
+struct DailyResponse: Codable {
+    let success: Bool
+    let data: DailyData?
+    let error: String?
 }

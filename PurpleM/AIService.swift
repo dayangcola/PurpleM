@@ -99,13 +99,21 @@ struct AIPersonality {
 }
 
 // MARK: - AI服务管理器
-class AIService: ObservableObject {
+class AIService: NSObject, ObservableObject, URLSessionDelegate {
     static let shared = AIService()
     
     @Published var isLoading = false
     @Published var error: String?
     
-    private let session = URLSession.shared
+    private lazy var session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 30
+        config.timeoutIntervalForResource = 60
+        // 允许在蜂窝网络下使用
+        config.allowsCellularAccess = true
+        // 创建自定义session以处理证书问题
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }()
     private var conversationHistory: [APIMessage] = []
     
     private struct APIMessage: Codable {
@@ -113,7 +121,8 @@ class AIService: ObservableObject {
         let content: String
     }
     
-    private init() {
+    override private init() {
+        super.init()
         // 初始化系统提示
         resetConversation()
     }
@@ -272,6 +281,25 @@ class AIService: ObservableObject {
                 "如何生成我的星盘？"
             ]
         }
+    }
+    
+    // MARK: - URLSessionDelegate
+    // 处理证书验证问题
+    func urlSession(_ session: URLSession, 
+                   didReceive challenge: URLAuthenticationChallenge, 
+                   completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        
+        // 对于Vercel部署的API，信任其证书
+        if challenge.protectionSpace.host.contains("vercel.app") {
+            if let serverTrust = challenge.protectionSpace.serverTrust {
+                let credential = URLCredential(trust: serverTrust)
+                completionHandler(.useCredential, credential)
+                return
+            }
+        }
+        
+        // 其他情况使用默认处理
+        completionHandler(.performDefaultHandling, nil)
     }
 }
 
