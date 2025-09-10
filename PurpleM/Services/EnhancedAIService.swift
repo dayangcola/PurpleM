@@ -173,9 +173,9 @@ class EnhancedAIService: NSObject, ObservableObject {
     @Published var isLoading = false
     @Published var suggestedQuestions: [String] = []
     
-    private var userMemory: UserMemory
-    private var conversationHistory: [(role: String, content: String)] = []
-    private let maxHistoryCount = 20
+    internal var userMemory: UserMemory
+    internal var conversationHistory: [(role: String, content: String)] = []
+    internal let maxHistoryCount = 20
     
     override private init() {
         // 加载或创建用户记忆

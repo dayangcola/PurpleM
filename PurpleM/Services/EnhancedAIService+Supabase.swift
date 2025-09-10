@@ -258,7 +258,7 @@ extension EnhancedAIService {
     private func restoreMemoryFromCloud(_ data: [String: Any]) {
         // 恢复关键事件
         if let events = data["key_events"] as? [[String: Any]] {
-            userMemory.keyEvents = events.compactMap { eventData in
+            userMemory.keyEvents = events.compactMap { eventData -> UserMemory.KeyEvent? in
                 guard let dateString = eventData["date"] as? String,
                       let date = ISO8601DateFormatter().date(from: dateString),
                       let event = eventData["event"] as? String,
@@ -281,7 +281,7 @@ extension EnhancedAIService {
         
         // 恢复咨询历史
         if let history = data["consult_history"] as? [[String: Any]] {
-            userMemory.consultHistory = history.compactMap { recordData in
+            userMemory.consultHistory = history.compactMap { recordData -> UserMemory.ConsultRecord? in
                 guard let dateString = recordData["date"] as? String,
                       let date = ISO8601DateFormatter().date(from: dateString),
                       let topic = recordData["topic"] as? String,
@@ -306,7 +306,7 @@ extension EnhancedAIService {
     }
     
     // MARK: - 辅助方法
-    private func detectConversationStyle() -> String {
+    internal func detectConversationStyle() -> String {
         // 基于最近的对话判断用户偏好的对话风格
         if conversationHistory.count > 10 {
             // 分析对话特征
