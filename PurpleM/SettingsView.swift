@@ -347,7 +347,7 @@ struct SettingsView: View {
                             
                             GlassmorphicCard {
                                 VStack(alignment: .leading, spacing: 12) {
-                                    // 版本号（长按触发上传）
+                                    // 版本号
                                     HStack {
                                         Text("版本")
                                             .font(.system(size: 14))
@@ -356,11 +356,6 @@ struct SettingsView: View {
                                         Text("1.0.0")
                                             .font(.system(size: 14))
                                             .foregroundColor(.crystalWhite)
-                                    }
-                                    .contentShape(Rectangle())
-                                    .onLongPressGesture(minimumDuration: 2.0) {
-                                        // 长按2秒触发
-                                        showBookUpload = true
                                     }
                                     
                                     Divider()
@@ -374,6 +369,33 @@ struct SettingsView: View {
                             }
                         }
                         .padding(.horizontal)
+                        
+                        // 知识库管理按钮（不起眼的样式）
+                        VStack(spacing: 10) {
+                            Divider()
+                                .background(Color.moonSilver.opacity(0.1))
+                                .padding(.horizontal)
+                            
+                            Button(action: {
+                                showBookUpload = true
+                            }) {
+                                HStack {
+                                    Image(systemName: "doc.text")
+                                        .font(.system(size: 14))
+                                    Text("知识库管理")
+                                        .font(.system(size: 14))
+                                }
+                                .foregroundColor(.moonSilver.opacity(0.5))
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 16)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(Color.white.opacity(0.05))
+                                )
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                        .padding(.top, 10)
                         
                         Spacer(minLength: 100)
                     }
