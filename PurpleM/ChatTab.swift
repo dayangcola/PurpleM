@@ -19,7 +19,7 @@ struct ChatTab: View {
     @State private var messages: [ChatMessage] = []
     @State private var inputText = ""
     @State private var isTyping = false
-    @State private var useStreamingMode = true  // 启用流式响应
+    @State private var currentStreamingMessageId: UUID? = nil  // 当前流式消息ID
     @State private var isInitializing = true
     @State private var showQuotaAlert = false
     @State private var scrollProxy: ScrollViewProxy?
@@ -159,7 +159,7 @@ struct ChatTab: View {
         .navigationViewStyle(StackNavigationViewStyle())
     }
     
-    // 发送消息
+    // 发送消息（支持智能流式）
     private func sendMessage() {
         let messageText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !messageText.isEmpty else { return }
@@ -178,7 +178,28 @@ struct ChatTab: View {
         inputText = ""
         isTyping = true
         
-        // 发送到AI服务
+        // 检测当前场景（增强版功能）
+        let currentScene: ConversationScene = settingsManager.aiMode == .enhanced ? 
+            EnhancedAIService.shared.currentScene : .greeting
+        
+        // 智能判断是否使用流式响应
+        let shouldUseStreaming = StreamingDetector.shouldUseStreaming(
+            for: currentScene,
+            message: messageText,
+            settings: settingsManager
+        )
+        
+        if shouldUseStreaming && settingsManager.aiMode == .enhanced {
+            // 使用流式响应
+            sendStreamingMessage(messageText, scene: currentScene)
+        } else {
+            // 使用普通响应
+            sendNormalMessage(messageText)
+        }
+    }
+    
+    // 普通消息发送（非流式）
+    private func sendNormalMessage(_ messageText: String) {
         Task {
             let response: String
             
@@ -219,8 +240,118 @@ struct ChatTab: View {
                         response: response
                     )
                 }
+                
+                // 记录统计
+                StreamingAnalytics.shared.recordUsage(
+                    scene: EnhancedAIService.shared.currentScene,
+                    messageLength: messageText.count,
+                    responseLength: response.count,
+                    usedStreaming: false
+                )
             }
         }
+    }
+    
+    // 流式消息发送
+    private func sendStreamingMessage(_ messageText: String, scene: ConversationScene) {
+        // 创建AI消息占位符
+        let aiMessageId = UUID()
+        currentStreamingMessageId = aiMessageId
+        
+        let aiMessage = ChatMessage(
+            id: aiMessageId,
+            content: "",
+            isFromUser: false,
+            timestamp: Date()
+        )
+        messages.append(aiMessage)
+        
+        Task {
+            do {
+                var fullResponse = ""
+                
+                // 构建上下文
+                let context = buildStreamingContext()
+                
+                // 获取流式响应
+                let stream = try await streamingService.sendStreamingMessage(
+                    messageText,
+                    context: context
+                )
+                
+                // 逐块更新消息
+                for try await chunk in stream {
+                    fullResponse += chunk
+                    
+                    // 更新UI上的消息
+                    await MainActor.run {
+                        if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
+                            messages[index] = ChatMessage(
+                                id: aiMessageId,
+                                content: fullResponse,
+                                isFromUser: false,
+                                timestamp: Date()
+                            )
+                            
+                            // 自动滚动到底部
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                scrollProxy?.scrollTo(aiMessageId, anchor: .bottom)
+                            }
+                        }
+                    }
+                }
+                
+                await MainActor.run {
+                    isTyping = false
+                    currentStreamingMessageId = nil
+                    saveChatHistory()
+                    
+                    // 生成智能推荐
+                    recommendationEngine.generateQuestionSuggestions(
+                        basedOn: messageText,
+                        response: fullResponse
+                    )
+                    
+                    // 记录统计
+                    StreamingAnalytics.shared.recordUsage(
+                        scene: scene,
+                        messageLength: messageText.count,
+                        responseLength: fullResponse.count,
+                        usedStreaming: true
+                    )
+                }
+                
+            } catch {
+                // 错误处理：降级到普通模式
+                await MainActor.run {
+                    // 移除占位消息
+                    messages.removeAll { $0.id == aiMessageId }
+                    currentStreamingMessageId = nil
+                    
+                    // 使用普通模式重试
+                    sendNormalMessage(messageText)
+                }
+            }
+        }
+    }
+    
+    // 构建流式上下文
+    private func buildStreamingContext() -> [(role: String, content: String)] {
+        var context: [(role: String, content: String)] = []
+        
+        // 添加系统提示词
+        context.append((role: "system", content: AIPersonality.systemPrompt))
+        
+        // 添加最近的对话历史（限制10条避免token过多）
+        let recentMessages = messages.suffix(10).filter { !$0.content.isEmpty }
+        for message in recentMessages {
+            context.append((
+                role: message.isFromUser ? "user" : "assistant",
+                content: message.content
+            ))
+        }
+        
+        return context
     }
     
     // 发送快速问题
@@ -419,6 +550,7 @@ struct ChatMessage: Identifiable, Codable {
 // MARK: - 聊天气泡
 struct ChatBubble: View {
     let message: ChatMessage
+    @State private var isStreaming: Bool = false
     
     var body: some View {
         HStack {
@@ -427,6 +559,21 @@ struct ChatBubble: View {
             }
             
             VStack(alignment: message.isFromUser ? .trailing : .leading, spacing: 4) {
+                // 流式响应指示器
+                if !message.isFromUser && isStreaming {
+                    HStack(spacing: 4) {
+                        Image(systemName: "waveform.path.ecg")
+                            .font(.system(size: 10))
+                            .foregroundColor(.starGold)
+                            .symbolEffect(.pulse, options: .repeating)
+                        
+                        Text("实时响应中...")
+                            .font(.system(size: 10))
+                            .foregroundColor(.starGold.opacity(0.8))
+                    }
+                    .padding(.horizontal, 4)
+                }
+                
                 // 消息内容
                 Text(message.content)
                     .font(.system(size: 15))
@@ -443,7 +590,7 @@ struct ChatBubble: View {
                     .overlay(
                         message.isFromUser ? nil :
                         RoundedRectangle(cornerRadius: 18)
-                            .stroke(Color.moonSilver.opacity(0.2), lineWidth: 1)
+                            .stroke(isStreaming ? Color.starGold.opacity(0.3) : Color.moonSilver.opacity(0.2), lineWidth: 1)
                     )
                 
                 // 时间戳

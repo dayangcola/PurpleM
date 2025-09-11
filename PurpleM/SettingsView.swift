@@ -55,6 +55,20 @@ class SettingsManager: ObservableObject {
         }
     }
     
+    // 新增：流式响应设置
+    @Published var enableStreaming: Bool {
+        didSet {
+            UserDefaults.standard.set(enableStreaming, forKey: "enableStreaming")
+        }
+    }
+    
+    // 新增：智能流式检测（根据场景自动决定）
+    @Published var smartStreamingDetection: Bool {
+        didSet {
+            UserDefaults.standard.set(smartStreamingDetection, forKey: "smartStreamingDetection")
+        }
+    }
+    
     private init() {
         // 加载保存的设置
         let savedMode = UserDefaults.standard.string(forKey: "aiMode") ?? AIMode.standard.rawValue
@@ -62,6 +76,11 @@ class SettingsManager: ObservableObject {
         
         self.enableNotifications = UserDefaults.standard.bool(forKey: "enableNotifications")
         self.enableAutoSave = UserDefaults.standard.bool(forKey: "enableAutoSave")
+        
+        // 流式响应默认开启
+        self.enableStreaming = UserDefaults.standard.object(forKey: "enableStreaming") as? Bool ?? true
+        // 智能检测默认开启
+        self.smartStreamingDetection = UserDefaults.standard.object(forKey: "smartStreamingDetection") as? Bool ?? true
     }
 }
 
@@ -194,6 +213,63 @@ struct SettingsView: View {
                                     }
                                 }
                                 .tint(.mysticPink)
+                            }
+                        }
+                        .padding(.horizontal)
+                        
+                        // 流式响应设置（新增）
+                        VStack(alignment: .leading, spacing: 15) {
+                            HStack {
+                                Image(systemName: "waveform.path.ecg")
+                                    .foregroundColor(.starGold)
+                                Text("对话体验")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.crystalWhite)
+                            }
+                            
+                            GlassmorphicCard {
+                                VStack(spacing: 15) {
+                                    Toggle(isOn: $settingsManager.enableStreaming) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text("流式响应")
+                                                .font(.system(size: 16))
+                                                .foregroundColor(.crystalWhite)
+                                            Text("逐字显示AI回复，获得更流畅的对话体验")
+                                                .font(.system(size: 12))
+                                                .foregroundColor(.moonSilver.opacity(0.8))
+                                        }
+                                    }
+                                    .tint(.mysticPink)
+                                    
+                                    if settingsManager.enableStreaming {
+                                        Divider()
+                                            .background(Color.moonSilver.opacity(0.2))
+                                        
+                                        Toggle(isOn: $settingsManager.smartStreamingDetection) {
+                                            VStack(alignment: .leading, spacing: 4) {
+                                                HStack(spacing: 4) {
+                                                    Text("智能检测")
+                                                        .font(.system(size: 16))
+                                                        .foregroundColor(.crystalWhite)
+                                                    
+                                                    Text("推荐")
+                                                        .font(.system(size: 10, weight: .medium))
+                                                        .foregroundColor(.starGold)
+                                                        .padding(.horizontal, 6)
+                                                        .padding(.vertical, 2)
+                                                        .background(
+                                                            Capsule()
+                                                                .fill(Color.starGold.opacity(0.2))
+                                                        )
+                                                }
+                                                Text("仅在命盘解读和运势分析时使用流式")
+                                                    .font(.system(size: 12))
+                                                    .foregroundColor(.moonSilver.opacity(0.8))
+                                            }
+                                        }
+                                        .tint(.mysticPink)
+                                    }
+                                }
                             }
                         }
                         .padding(.horizontal)
