@@ -38,14 +38,19 @@ extension EnhancedAIService {
         }
         
         // 1. 检查配额（测试模式：跳过配额检查）
-        #if DEBUG
-        // 测试模式下不限制配额
-        print("🔧 测试模式：跳过配额检查")
-        #else
-        let quotaAvailable = await SupabaseManager.shared.checkQuotaAvailable()
-        if !quotaAvailable {
-            return """
-            您今日的免费额度已用完 😊
+        // 检查是否是超级用户 test@gmail.com
+        if let email = AuthManager.shared.currentUser?.email,
+           email.lowercased() == "test@gmail.com" {
+            print("👑 超级用户模式 - 无限使用")
+        } else {
+            #if DEBUG
+            // 测试模式下不限制配额
+            print("🔧 测试模式：跳过配额检查")
+            #else
+            let quotaAvailable = await SupabaseManager.shared.checkQuotaAvailable()
+            if !quotaAvailable {
+                return """
+                您今日的免费额度已用完 😊
             
             升级到专业版可享受：
             • 无限对话次数
@@ -55,8 +60,9 @@ extension EnhancedAIService {
             
             点击"个人中心"了解更多
             """
+            }
+            #endif
         }
-        #endif
         
         // 2. 创建或获取会话
         let sessionId: String

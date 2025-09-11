@@ -460,6 +460,19 @@ class SupabaseManager: ObservableObject {
     }
     
     func checkQuotaAvailable() async -> Bool {
+        // 超级用户检查 - test@gmail.com 永远返回true
+        if let email = await AuthManager.shared.currentUser?.email,
+           email.lowercased() == "test@gmail.com" {
+            print("👑 超级用户 test@gmail.com - 无限权限已激活")
+            return true
+        }
+        
+        // DEBUG模式检查
+        #if DEBUG
+        print("🔧 开发模式：配额检查已禁用")
+        return true
+        #endif
+        
         guard let userId = AuthManager.shared.currentUser?.id else { return false }
         
         do {
