@@ -177,6 +177,10 @@ class EnhancedAIService: NSObject, ObservableObject {
     internal var conversationHistory: [(role: String, content: String)] = []
     internal let maxHistoryCount = 20
     
+    // MARK: - 新增：情绪检测器实例
+    private let emotionDetector = EmotionDetector()
+    private let promptBuilder = PromptBuilder()
+    
     override private init() {
         // 加载或创建用户记忆
         if let savedMemory = UserDefaults.standard.data(forKey: "userMemory"),
@@ -198,11 +202,19 @@ class EnhancedAIService: NSObject, ObservableObject {
         isLoading = true
         defer { isLoading = false }
         
-        // 1. 检测情绪
-        detectedEmotion = detectEmotion(from: message)
+        // 1. 使用新的混合检测器检测情绪（优先使用关键词，置信度低时使用LLM）
+        detectedEmotion = await emotionDetector.detectEmotion(
+            from: message,
+            strategy: .hybrid,
+            previousContext: conversationHistory.suffix(3).map { $0.content }
+        )
         
-        // 2. 检测场景
-        currentScene = detectScene(from: message)
+        // 2. 使用新的混合检测器检测场景
+        currentScene = await emotionDetector.detectScene(
+            from: message,
+            strategy: .hybrid,
+            userHistory: conversationHistory.suffix(5).map { $0.content }
+        )
         
         // 3. 提取命盘上下文
         let chartContext = ChartContextExtractor.extract(
@@ -237,58 +249,9 @@ class EnhancedAIService: NSObject, ObservableObject {
         return finalResponse
     }
     
-    // MARK: - 情绪检测
-    private func detectEmotion(from message: String) -> UserEmotion {
-        let emotionKeywords: [UserEmotion: [String]] = [
-            .anxious: ["焦虑", "担心", "紧张", "不安", "害怕", "恐惧"],
-            .confused: ["迷茫", "困惑", "不知道", "怎么办", "选择", "纠结"],
-            .excited: ["开心", "高兴", "太好了", "激动", "兴奋", "哈哈"],
-            .sad: ["难过", "伤心", "痛苦", "失望", "沮丧", "郁闷"],
-            .angry: ["生气", "愤怒", "讨厌", "烦", "恼火", "不爽"],
-            .curious: ["为什么", "是什么", "怎么", "请问", "想知道", "好奇"]
-        ]
-        
-        for (emotion, keywords) in emotionKeywords {
-            for keyword in keywords {
-                if message.contains(keyword) {
-                    return emotion
-                }
-            }
-        }
-        
-        return .neutral
-    }
-    
-    // MARK: - 场景检测
-    private func detectScene(from message: String) -> ConversationScene {
-        let sceneKeywords: [ConversationScene: [String]] = [
-            .chartReading: ["命盘", "星盘", "宫位", "主星", "格局", "命宫"],
-            .fortuneTelling: ["运势", "运程", "最近", "今年", "明年", "大运", "流年"],
-            .learning: ["什么是", "为什么", "如何", "学习", "了解", "知识"],
-            .counseling: ["应该", "选择", "建议", "怎么办", "如何", "决定"],
-            .emergency: ["痛苦", "绝望", "活不下去", "崩溃", "撑不住"]
-        ]
-        
-        // 优先检测紧急情况
-        if let keywords = sceneKeywords[.emergency] {
-            for keyword in keywords {
-                if message.contains(keyword) {
-                    return .emergency
-                }
-            }
-        }
-        
-        // 检测其他场景
-        for (scene, keywords) in sceneKeywords {
-            for keyword in keywords {
-                if message.contains(keyword) {
-                    return scene
-                }
-            }
-        }
-        
-        return .greeting
-    }
+    // MARK: - 情绪和场景检测已迁移到 EmotionDetector.swift
+    // 使用更强大的混合检测策略（关键词 + LLM）
+    // 详见 emotionDetector.detectEmotion() 和 emotionDetector.detectScene()
     
     // MARK: - 构建增强型Prompt
     private func buildEnhancedPrompt(
@@ -298,36 +261,27 @@ class EnhancedAIService: NSObject, ObservableObject {
         chartContext: String
     ) -> String {
         
-        let prompt = """
-        # 角色设定
-        你是星语，一位融合千年命理智慧与现代心理学的AI命理导师。
+        // 使用新的 PromptBuilder 构建基础提示词
+        let basePrompt = promptBuilder.buildSystemPrompt(
+            scene: scene,
+            emotion: emotion,
+            memory: userMemory
+        )
         
-        # 当前场景
-        \(scene.rawValue) - \(scene.systemPrompt)
-        
-        # 用户情绪
-        \(emotion.rawValue) - 请以此开头：\(emotion.responsePrefix)
+        // 添加命盘上下文和当前消息
+        let enhancedPrompt = """
+        \(basePrompt)
         
         # 命盘信息
         \(chartContext)
         
-        # 用户记忆
-        \(userMemory.getRecentContext())
+        # 当前对话
+        用户消息：\(message)
         
-        # 对话原则
-        1. 保持温柔、智慧、神秘的语气
-        2. 结合具体的命盘信息分析
-        3. 给出可执行的建议
-        4. 适度使用emoji增加亲和力（不超过3个）
-        5. 回答控制在200字以内，除非用户要求详细解释
-        
-        # 用户消息
-        \(message)
-        
-        请以星语导师的身份，提供专业而温暖的回复。
+        请以星语导师的身份，基于以上信息提供专业而温暖的回复。
         """
         
-        return prompt
+        return enhancedPrompt
     }
     
     // MARK: - 更新记忆
