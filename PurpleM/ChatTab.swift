@@ -15,9 +15,11 @@ struct ChatTab: View {
     @StateObject private var networkMonitor = NetworkMonitor.shared
     @StateObject private var offlineQueue = OfflineQueueManager.shared
     @StateObject private var recommendationEngine = SmartRecommendationEngine.shared
+    @StateObject private var streamingService = StreamingAIService.shared
     @State private var messages: [ChatMessage] = []
     @State private var inputText = ""
     @State private var isTyping = false
+    @State private var useStreamingMode = true  // 启用流式响应
     @State private var isInitializing = true
     @State private var showQuotaAlert = false
     @State private var scrollProxy: ScrollViewProxy?
