@@ -93,6 +93,7 @@ struct SettingsView: View {
     @StateObject private var settingsManager = SettingsManager.shared
     @Environment(\.presentationMode) var presentationMode
     @State private var showAIModeInfo = false
+    @State private var showBookUpload = false
     
     var body: some View {
         NavigationView {
@@ -333,6 +334,47 @@ struct SettingsView: View {
                         .padding(.horizontal)
                         #endif
                         
+                        // 隐藏的知识库管理入口
+                        VStack(alignment: .leading, spacing: 15) {
+                            // 版本信息（表面上看起来很普通）
+                            HStack {
+                                Image(systemName: "info.circle")
+                                    .foregroundColor(.moonSilver.opacity(0.5))
+                                Text("关于")
+                                    .font(.system(size: 18, weight: .medium))
+                                    .foregroundColor(.crystalWhite)
+                            }
+                            
+                            GlassmorphicCard {
+                                VStack(alignment: .leading, spacing: 12) {
+                                    // 版本号（长按触发上传）
+                                    HStack {
+                                        Text("版本")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.moonSilver)
+                                        Spacer()
+                                        Text("1.0.0")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.crystalWhite)
+                                    }
+                                    .contentShape(Rectangle())
+                                    .onLongPressGesture(minimumDuration: 2.0) {
+                                        // 长按2秒触发
+                                        showBookUpload = true
+                                    }
+                                    
+                                    Divider()
+                                        .background(Color.moonSilver.opacity(0.2))
+                                    
+                                    // 版权信息
+                                    Text("© 2024 紫微星语")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.moonSilver.opacity(0.6))
+                                }
+                            }
+                        }
+                        .padding(.horizontal)
+                        
                         Spacer(minLength: 100)
                     }
                 }
@@ -348,6 +390,64 @@ struct SettingsView: View {
         .sheet(isPresented: $showAIModeInfo) {
             AIModeInfoView()
         }
+        .sheet(isPresented: $showBookUpload) {
+            NavigationView {
+                SimplePDFUploaderView()
+            }
+        }
+    }
+}
+
+// MARK: - 隐藏的PDF上传界面
+struct SimplePDFUploaderView: View {
+    @Environment(\.presentationMode) var presentationMode
+    @State private var showFilePicker = false
+    @State private var isProcessing = false
+    @State private var statusMessage = ""
+    @StateObject private var uploader = KnowledgeUploader()
+    
+    var body: some View {
+        ZStack {
+            AnimatedBackground()
+            
+            VStack(spacing: 30) {
+                Text("📚 知识库管理")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+                    .foregroundColor(.crystalWhite)
+                
+                Text("（内部功能，请谨慎使用）")
+                    .font(.caption)
+                    .foregroundColor(.moonSilver.opacity(0.6))
+                
+                GlassmorphicCard {
+                    VStack(spacing: 20) {
+                        SimplePDFUploaderButton()
+                        
+                        if !statusMessage.isEmpty {
+                            Text(statusMessage)
+                                .font(.caption)
+                                .foregroundColor(.moonSilver)
+                                .padding()
+                                .background(Color.black.opacity(0.2))
+                                .cornerRadius(8)
+                        }
+                    }
+                    .padding()
+                }
+                .frame(maxWidth: 400)
+                
+                Spacer()
+            }
+            .padding()
+        }
+        .navigationBarTitle("知识库", displayMode: .inline)
+        .navigationBarItems(
+            trailing: Button("关闭") {
+                presentationMode.wrappedValue.dismiss()
+            }
+            .foregroundColor(.starGold)
+        )
     }
 }
 

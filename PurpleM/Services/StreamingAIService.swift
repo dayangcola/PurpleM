@@ -38,7 +38,7 @@ enum SSEEvent {
 
 // MARK: - 流式AI服务
 @MainActor
-class StreamingAIService: NSObject, ObservableObject {
+class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
     static let shared = StreamingAIService()
     
     // MARK: - 发布的属性

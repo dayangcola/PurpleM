@@ -8,6 +8,33 @@
 import Foundation
 import Combine
 
+// MARK: - API错误定义
+enum APIError: LocalizedError {
+    case invalidResponse
+    case decodingError(Error)
+    case networkError(Error)
+    case unauthorized
+    case serverError(Int)
+    case unknown
+    
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "无效的服务器响应"
+        case .decodingError(let error):
+            return "数据解析错误: \(error.localizedDescription)"
+        case .networkError(let error):
+            return "网络错误: \(error.localizedDescription)"
+        case .unauthorized:
+            return "未授权的访问"
+        case .serverError(let code):
+            return "服务器错误: \(code)"
+        case .unknown:
+            return "未知错误"
+        }
+    }
+}
+
 // MARK: - 数据模型
 struct ChatSessionDB: Codable {
     let id: String
@@ -252,13 +279,18 @@ class SupabaseManager: ObservableObject {
     }
     
     // MARK: - 网络请求基础方法
-    private func makeRequest<T: Codable>(
+    internal func makeRequest<T: Codable>(
         endpoint: String,
         method: String = "GET",
         body: Data? = nil,
+        queryItems: [URLQueryItem]? = nil,
+        headers: [String: String]? = nil,
         expecting: T.Type
     ) async throws -> T {
-        guard let url = URL(string: "\(baseURL)/rest/v1/\(endpoint)") else {
+        var urlComponents = URLComponents(string: "\(baseURL)\(endpoint)")
+        urlComponents?.queryItems = queryItems
+        
+        guard let url = urlComponents?.url else {
             throw URLError(.badURL)
         }
         
@@ -266,6 +298,11 @@ class SupabaseManager: ObservableObject {
         request.httpMethod = method
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "apikey")
+        
+        // Add custom headers
+        headers?.forEach { key, value in
+            request.setValue(value, forHTTPHeaderField: key)
+        }
         
         // 添加认证token
         if let token = authToken {
