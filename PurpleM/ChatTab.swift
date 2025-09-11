@@ -14,6 +14,7 @@ struct ChatTab: View {
     @StateObject private var supabaseManager = SupabaseManager.shared
     @StateObject private var networkMonitor = NetworkMonitor.shared
     @StateObject private var offlineQueue = OfflineQueueManager.shared
+    @StateObject private var recommendationEngine = SmartRecommendationEngine.shared
     @State private var messages: [ChatMessage] = []
     @State private var inputText = ""
     @State private var isTyping = false
@@ -95,6 +96,19 @@ struct ChatTab: View {
                                     if isTyping {
                                         TypingIndicator()
                                             .id("typing")
+                                    }
+                                    
+                                    // 显示智能推荐问题（增强版）
+                                    if settingsManager.aiMode == .enhanced && 
+                                       !isTyping && 
+                                       !recommendationEngine.suggestedQuestions.isEmpty &&
+                                       !messages.isEmpty {
+                                        SuggestedQuestionsView(
+                                            questions: recommendationEngine.suggestedQuestions,
+                                            onQuestionTap: sendQuickQuestion
+                                        )
+                                        .id("suggestions")
+                                        .transition(.move(edge: .bottom).combined(with: .opacity))
                                     }
                                 }
                                 .padding()
@@ -195,6 +209,14 @@ struct ChatTab: View {
                 if response.contains("免费额度已用完") {
                     showQuotaAlert = true
                 }
+                
+                // 增强版：生成智能推荐问题
+                if settingsManager.aiMode == .enhanced {
+                    recommendationEngine.generateQuestionSuggestions(
+                        basedOn: messageText,
+                        response: response
+                    )
+                }
             }
         }
     }
@@ -281,10 +303,16 @@ struct WelcomeMessageView: View {
     let onQuestionTap: (String) -> Void
     @StateObject private var userDataManager = UserDataManager.shared
     @StateObject private var settingsManager = SettingsManager.shared
+    @StateObject private var recommendationEngine = SmartRecommendationEngine.shared
     
     private func getQuestions() -> [String] {
         if settingsManager.aiMode == .enhanced {
             // 增强版提供的智能问题
+            let smartQuestions = recommendationEngine.suggestedQuestions
+            if !smartQuestions.isEmpty {
+                return smartQuestions
+            }
+            // 如果没有智能推荐，返回默认推荐
             return EnhancedAIService.shared.suggestedQuestions
         } else {
             // 标准版的基础问题
@@ -351,6 +379,20 @@ struct WelcomeMessageView: View {
                         ForEach(getQuestions(), id: \.self) { question in
                             QuickQuestionButton(text: question) {
                                 onQuestionTap(question)
+                            }
+                        }
+                    }
+                    
+                    // 增强版显示智能推荐
+                    if settingsManager.aiMode == .enhanced && !recommendationEngine.currentRecommendations.isEmpty {
+                        VStack(spacing: 10) {
+                            Text("智能推荐")
+                                .font(.system(size: 14))
+                                .foregroundColor(.starGold.opacity(0.7))
+                                .padding(.top, 10)
+                            
+                            ForEach(recommendationEngine.currentRecommendations.prefix(3)) { item in
+                                SmartRecommendationCard(item: item, onQuestionTap: onQuestionTap)
                             }
                         }
                     }
@@ -527,6 +569,130 @@ struct TypingIndicator: View {
         }
         .onAppear {
             animationAmount = 1.2
+        }
+    }
+}
+
+// MARK: - 推荐问题视图
+struct SuggestedQuestionsView: View {
+    let questions: [String]
+    let onQuestionTap: (String) -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("接下来你可以问:")
+                .font(.system(size: 12))
+                .foregroundColor(.moonSilver.opacity(0.7))
+                .padding(.horizontal, 4)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(questions, id: \.self) { question in
+                        Button(action: {
+                            onQuestionTap(question)
+                        }) {
+                            Text(question)
+                                .font(.system(size: 12))
+                                .foregroundColor(.crystalWhite)
+                                .lineLimit(1)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    Capsule()
+                                        .fill(
+                                            LinearGradient(
+                                                colors: [.mysticPink.opacity(0.3), .cosmicPurple.opacity(0.3)],
+                                                startPoint: .leading,
+                                                endPoint: .trailing
+                                            )
+                                        )
+                                        .overlay(
+                                            Capsule()
+                                                .stroke(Color.starGold.opacity(0.3), lineWidth: 0.5)
+                                        )
+                                )
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
+            }
+        }
+        .padding(.vertical, 8)
+    }
+}
+
+// MARK: - 智能推荐卡片（聊天界面版本）
+struct SmartRecommendationCard: View {
+    let item: RecommendationItem
+    let onQuestionTap: (String) -> Void
+    
+    var body: some View {
+        Button(action: {
+            // 将推荐转换为问题
+            let question = convertToQuestion(item)
+            onQuestionTap(question)
+        }) {
+            HStack(spacing: 10) {
+                Image(systemName: item.icon)
+                    .font(.system(size: 16))
+                    .foregroundColor(colorForType(item.type))
+                    .frame(width: 24)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.crystalWhite)
+                    
+                    if let subtitle = item.subtitle {
+                        Text(subtitle)
+                            .font(.system(size: 11))
+                            .foregroundColor(.moonSilver.opacity(0.7))
+                    }
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 10))
+                    .foregroundColor(.moonSilver.opacity(0.4))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.white.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(colorForType(item.type).opacity(0.3), lineWidth: 0.5)
+                    )
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
+    
+    private func convertToQuestion(_ item: RecommendationItem) -> String {
+        switch item.type {
+        case .question:
+            return item.subtitle ?? item.title
+        case .feature:
+            return "我想了解\(item.title)"
+        case .content:
+            return "请给我介绍\(item.title)"
+        case .timing:
+            return "告诉我关于\(item.title)的信息"
+        }
+    }
+    
+    private func colorForType(_ type: RecommendationType) -> Color {
+        switch type {
+        case .question:
+            return .starGold
+        case .feature:
+            return .mysticPink
+        case .content:
+            return .cosmicPurple
+        case .timing:
+            return .crystalWhite
         }
     }
 }

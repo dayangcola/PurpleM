@@ -37,7 +37,11 @@ extension EnhancedAIService {
             return await sendMessage(message)
         }
         
-        // 1. 检查配额
+        // 1. 检查配额（测试模式：跳过配额检查）
+        #if DEBUG
+        // 测试模式下不限制配额
+        print("🔧 测试模式：跳过配额检查")
+        #else
         let quotaAvailable = await SupabaseManager.shared.checkQuotaAvailable()
         if !quotaAvailable {
             return """
@@ -52,6 +56,7 @@ extension EnhancedAIService {
             点击"个人中心"了解更多
             """
         }
+        #endif
         
         // 2. 创建或获取会话
         let sessionId: String
@@ -77,11 +82,19 @@ extension EnhancedAIService {
             )
             
             // 更新配额
+            #if DEBUG
+            // 测试模式：使用极小的token数
+            _ = try? await SupabaseManager.shared.incrementQuotaUsage(
+                userId: userId,
+                tokens: 1  // 测试时只记录1个token
+            )
+            #else
             let estimatedTokens = estimateTokens(message: message, response: response)
             _ = try? await SupabaseManager.shared.incrementQuotaUsage(
                 userId: userId,
                 tokens: estimatedTokens
             )
+            #endif
             
             // 同步记忆
             await syncMemoryToCloud(userId: userId)
