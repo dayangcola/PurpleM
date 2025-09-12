@@ -340,30 +340,17 @@ class OfflineQueueManager: ObservableObject {
             )
             
         case .syncMemory(let userId, let data):
-            // 转换为UserAIPreferencesDB
-            let preferences = UserAIPreferencesDB(
+            // 使用DataSyncManager处理记忆同步
+            try await DataSyncManager.shared.syncMemoryData(
                 userId: userId,
-                customPersonality: data
-            )
-            
-            try await SupabaseManager.shared.saveUserPreferences(
-                userId: userId,
-                preferences: preferences
+                memoryData: data
             )
             
         case .updatePreferences(let userId, let preferences):
-            let prefs = UserAIPreferencesDB(
+            // 使用DataSyncManager处理偏好更新
+            try await DataSyncManager.shared.syncUserPreferences(
                 userId: userId,
-                conversationStyle: preferences["conversationStyle"] as? String,
-                responseLength: preferences["responseLength"] as? String,
-                customPersonality: preferences["customPersonality"] as? [String: Any],
-                preferredTopics: preferences["preferredTopics"] as? [String],
-                enableSuggestions: preferences["enableSuggestions"] as? Bool
-            )
-            
-            try await SupabaseManager.shared.saveUserPreferences(
-                userId: userId,
-                preferences: prefs
+                preferences: preferences
             )
             
         case .incrementQuota(let userId, let tokens):
