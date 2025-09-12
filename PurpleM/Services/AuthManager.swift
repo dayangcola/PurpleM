@@ -136,6 +136,17 @@ class AuthManager: ObservableObject {
                 UserDefaults.standard.set(token, forKey: "accessToken")
             }
             
+            // 确保用户Profile存在
+            Task {
+                do {
+                    try await UserProfileManager.shared.ensureUserProfile(for: authResponse.user)
+                    print("✅ 用户Profile已确保存在")
+                } catch {
+                    print("⚠️ 创建Profile失败: \(error)")
+                    // Profile创建失败不影响登录，但记录错误
+                }
+            }
+            
             // 发送认证状态变化通知
             NotificationCenter.default.post(
                 name: NSNotification.Name("AuthStateChanged"),
