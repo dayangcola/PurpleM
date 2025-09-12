@@ -173,7 +173,7 @@ struct TestSupabaseConnection: View {
         
         do {
             // 尝试获取一个简单的查询
-            let testUserId = "test-user-\(UUID().uuidString)"
+            let testUserId = UUID().uuidString
             let quota = try await SupabaseManager.shared.getUserQuota(userId: testUserId)
             
             if quota != nil {
@@ -207,7 +207,7 @@ struct TestSupabaseConnection: View {
         var result: TestResult
         
         do {
-            let testUserId = "test-\(UUID().uuidString)"
+            let testUserId = UUID().uuidString
             let session = try await SupabaseManager.shared.createChatSession(
                 userId: testUserId,
                 sessionType: "test",
@@ -238,7 +238,7 @@ struct TestSupabaseConnection: View {
         
         do {
             let testSessionId = UUID().uuidString
-            let testUserId = "test-\(UUID().uuidString)"
+            let testUserId = UUID().uuidString
             
             try await SupabaseManager.shared.saveMessage(
                 sessionId: testSessionId,
@@ -315,8 +315,8 @@ struct TestSupabaseConnection: View {
         // 添加测试项到队列
         OfflineQueueManager.shared.enqueue(
             .saveMessage(
-                sessionId: "test-session",
-                userId: "test-user",
+                sessionId: UUID().uuidString,
+                userId: UUID().uuidString,
                 role: "user",
                 content: "离线测试",
                 metadata: [:]

@@ -490,7 +490,7 @@ class SupabaseManager: ObservableObject {
         let jsonData = try JSONSerialization.data(withJSONObject: message)
         
         _ = try await makeRequest(
-            endpoint: "chat_messages",
+            endpoint: "/rest/v1/chat_messages",
             method: "POST",
             body: jsonData,
             expecting: [ChatMessageDB].self
@@ -514,7 +514,7 @@ class SupabaseManager: ObservableObject {
         let jsonData = try JSONEncoder().encode(preferences)
         
         _ = try await makeRequest(
-            endpoint: "user_ai_preferences",
+            endpoint: "/rest/v1/user_ai_preferences",
             method: "POST",
             body: jsonData,
             expecting: [UserAIPreferencesDB].self
