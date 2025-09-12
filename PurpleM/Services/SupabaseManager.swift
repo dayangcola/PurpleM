@@ -272,9 +272,43 @@ class SupabaseManager: ObservableObject {
         // 简化：直接使用AuthManager的状态
         // 实际项目中应该通过AuthManager获取token
         if AuthManager.shared.isAuthenticated {
-            self.isConnected = true
+            // 测试连接
+            Task {
+                await testConnection()
+            }
             // 这里应该从AuthManager获取实际的token
             // self.authToken = AuthManager.shared.authToken
+        }
+    }
+    
+    // 测试Supabase连接
+    func testConnection() async {
+        do {
+            // 尝试一个简单的查询来测试连接
+            let url = URL(string: "\(baseURL)/rest/v1/")!
+            var request = URLRequest(url: url)
+            request.httpMethod = "HEAD"
+            request.setValue(apiKey, forHTTPHeaderField: "apikey")
+            
+            let (_, response) = try await URLSession.shared.data(for: request)
+            
+            if let httpResponse = response as? HTTPURLResponse,
+               httpResponse.statusCode < 400 {
+                await MainActor.run {
+                    self.isConnected = true
+                    print("✅ Supabase连接成功")
+                }
+            } else {
+                await MainActor.run {
+                    self.isConnected = false
+                    print("❌ Supabase连接失败")
+                }
+            }
+        } catch {
+            await MainActor.run {
+                self.isConnected = false
+                print("❌ Supabase连接错误: \(error.localizedDescription)")
+            }
         }
     }
     
@@ -287,7 +321,9 @@ class SupabaseManager: ObservableObject {
         headers: [String: String]? = nil,
         expecting: T.Type
     ) async throws -> T {
-        var urlComponents = URLComponents(string: "\(baseURL)\(endpoint)")
+        // 确保endpoint以/开头
+        let fullEndpoint = endpoint.hasPrefix("/") ? endpoint : "/\(endpoint)"
+        var urlComponents = URLComponents(string: "\(baseURL)\(fullEndpoint)")
         urlComponents?.queryItems = queryItems
         
         guard let url = urlComponents?.url else {
