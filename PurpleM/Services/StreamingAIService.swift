@@ -221,52 +221,56 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
 // MARK: - URLSession Delegate
 extension StreamingAIService: URLSessionDataDelegate {
     
-    func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
-        // 处理接收到的流数据
-        guard let string = String(data: data, encoding: .utf8) else { return }
-        
-        responseBuffer += string
-        
-        // 解析SSE事件
-        let lines = responseBuffer.components(separatedBy: "\n")
-        
-        for line in lines {
-            if line.hasPrefix("data: ") {
-                let jsonString = String(line.dropFirst(6))
-                
-                if jsonString == "[DONE]" {
-                    eventParser.onEvent?(.completed)
-                    continue
-                }
-                
-                do {
-                    if let jsonData = jsonString.data(using: .utf8),
-                       let chunk = try? JSONDecoder().decode(StreamChunk.self, from: jsonData),
-                       let content = chunk.choices?.first?.delta.content {
-                        
-                        eventParser.onEvent?(.message(content))
+    nonisolated func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        Task { @MainActor in
+            // 处理接收到的流数据
+            guard let string = String(data: data, encoding: .utf8) else { return }
+            
+            responseBuffer += string
+            
+            // 解析SSE事件
+            let lines = responseBuffer.components(separatedBy: "\n")
+            
+            for line in lines {
+                if line.hasPrefix("data: ") {
+                    let jsonString = String(line.dropFirst(6))
+                    
+                    if jsonString == "[DONE]" {
+                        eventParser.onEvent?(.completed)
+                        continue
                     }
-                } catch {
-                    // 解析错误，继续处理下一行
-                    continue
+                    
+                    do {
+                        if let jsonData = jsonString.data(using: .utf8),
+                           let chunk = try? JSONDecoder().decode(StreamChunk.self, from: jsonData),
+                           let content = chunk.choices?.first?.delta.content {
+                            
+                            eventParser.onEvent?(.message(content))
+                        }
+                    } catch {
+                        // 解析错误，继续处理下一行
+                        continue
+                    }
                 }
             }
-        }
-        
-        // 清理已处理的数据
-        if let lastNewline = responseBuffer.lastIndex(of: "\n") {
-            responseBuffer = String(responseBuffer[responseBuffer.index(after: lastNewline)...])
+            
+            // 清理已处理的数据
+            if let lastNewline = responseBuffer.lastIndex(of: "\n") {
+                responseBuffer = String(responseBuffer[responseBuffer.index(after: lastNewline)...])
+            }
         }
     }
     
-    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        if let error = error {
-            eventParser.onEvent?(.error(error))
-        } else {
-            eventParser.onEvent?(.completed)
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        Task { @MainActor in
+            if let error = error {
+                eventParser.onEvent?(.error(error))
+            } else {
+                eventParser.onEvent?(.completed)
+            }
+            
+            isStreaming = false
         }
-        
-        isStreaming = false
     }
 }
 

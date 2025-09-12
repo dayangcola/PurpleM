@@ -255,8 +255,8 @@ class SupabaseManager: ObservableObject {
     @Published var userQuota: UserQuotaDB?
     
     private var cancellables = Set<AnyCancellable>()
-    private let baseURL: String
-    private let apiKey: String
+    internal let baseURL: String
+    internal let apiKey: String
     private var authToken: String?
     
     private init() {
@@ -362,7 +362,7 @@ class SupabaseManager: ObservableObject {
             "session_type": sessionType,
             "title": title ?? "对话 - \(Date().formatted())",
             "model_preferences": [
-                "mode": SettingsManager.shared.aiMode.rawValue,
+                "mode": "增强版",
                 "emotion_detection": true,
                 "memory_enabled": true
             ],

@@ -136,6 +136,12 @@ class AuthManager: ObservableObject {
                 UserDefaults.standard.set(token, forKey: "accessToken")
             }
             
+            // 发送认证状态变化通知
+            NotificationCenter.default.post(
+                name: NSNotification.Name("AuthStateChanged"),
+                object: nil
+            )
+            
         } catch let error as AuthError {
             print("❌ Auth error: \(error.localizedDescription)")
             authState = .error(error.localizedDescription)
@@ -288,6 +294,12 @@ class AuthManager: ObservableObject {
         UserDefaults.standard.removeObject(forKey: "accessToken")
         self.currentUser = nil
         self.authState = .unauthenticated
+        
+        // 发送认证状态变化通知
+        NotificationCenter.default.post(
+            name: NSNotification.Name("AuthStateChanged"),
+            object: nil
+        )
     }
 }
 

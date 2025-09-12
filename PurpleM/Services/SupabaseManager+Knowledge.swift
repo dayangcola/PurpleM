@@ -165,6 +165,26 @@ extension SupabaseManager {
     
     // MARK: - 知识搜索
     
+    /// 文本搜索（使用text_search函数）
+    func searchKnowledgeWithTextSearch(query: String, limit: Int = 5) async throws -> [[String: Any]] {
+        let rpcData: [String: Any] = [
+            "query_text": query,
+            "result_limit": limit
+        ]
+        
+        let jsonData = try JSONSerialization.data(withJSONObject: rpcData)
+        
+        let response = try await makeRequest(
+            endpoint: "/rest/v1/rpc/text_search",
+            method: "POST",
+            body: jsonData,
+            expecting: Data.self
+        )
+        
+        let results = try JSONSerialization.jsonObject(with: response) as? [[String: Any]] ?? []
+        return results
+    }
+    
     /// 向量相似度搜索
     func searchKnowledgeByVector(
         embedding: [Float],

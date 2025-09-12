@@ -222,12 +222,16 @@ class EnhancedAIService: NSObject, ObservableObject {
             chart: UserDataManager.shared.currentChart
         )
         
-        // 4. 构建增强型Prompt
+        // 3.5 搜索知识库（新增）
+        let knowledgeReferences = await searchKnowledgeBase(query: message)
+        
+        // 4. 构建增强型Prompt（包含知识库引用）
         let enhancedPrompt = buildEnhancedPrompt(
             message: message,
             emotion: detectedEmotion,
             scene: currentScene,
-            chartContext: chartContext
+            chartContext: chartContext,
+            knowledgeRefs: knowledgeReferences
         )
         
         // 5. 调用AI（这里调用现有的AIService）
@@ -246,6 +250,15 @@ class EnhancedAIService: NSObject, ObservableObject {
             finalResponse += "\n\n💫 **温馨提醒**\n" + reminders.joined(separator: "\n")
         }
         
+        // 9. 添加知识库引用列表（如果有）
+        if !knowledgeReferences.isEmpty {
+            finalResponse += "\n\n---\n📚 **参考资料**\n"
+            for (index, ref) in knowledgeReferences.enumerated() {
+                let num = index + 1
+                finalResponse += "[\(num)] \(ref.citation)\n"
+            }
+        }
+        
         return finalResponse
     }
     
@@ -258,7 +271,8 @@ class EnhancedAIService: NSObject, ObservableObject {
         message: String,
         emotion: UserEmotion,
         scene: ConversationScene,
-        chartContext: String
+        chartContext: String,
+        knowledgeRefs: [(citation: String, content: String)] = []
     ) -> String {
         
         // 使用新的 PromptBuilder 构建基础提示词
@@ -268,9 +282,37 @@ class EnhancedAIService: NSObject, ObservableObject {
             memory: userMemory
         )
         
+        // 构建知识库参考部分
+        var knowledgeSection = ""
+        if !knowledgeRefs.isEmpty {
+            knowledgeSection = """
+            
+            # 知识库参考
+            """
+            for (index, ref) in knowledgeRefs.enumerated() {
+                let num = index + 1
+                let preview = String(ref.content.prefix(300))
+                knowledgeSection += """
+                
+                参考[\(num)]：\(ref.citation)
+                内容：\(preview)...
+                """
+            }
+            
+            knowledgeSection += """
+            
+            
+            【回答要求】
+            1. 基于以上参考资料提供准确回答
+            2. 使用[1][2][3]标注引用来源
+            3. 如果参考资料不足，说明并提供你的专业建议
+            """
+        }
+        
         // 添加命盘上下文和当前消息
         let enhancedPrompt = """
         \(basePrompt)
+        \(knowledgeSection)
         
         # 命盘信息
         \(chartContext)

@@ -25,15 +25,8 @@ struct ChatTab: View {
     @State private var scrollProxy: ScrollViewProxy?
     @State private var cancellables = Set<AnyCancellable>()
     
-    // 动态获取AI服务
-    private var aiService: NSObject {
-        switch settingsManager.aiMode {
-        case .standard:
-            return AIService.shared
-        case .enhanced:
-            return EnhancedAIService.shared
-        }
-    }
+    // 使用增强版AI服务（集成知识库）
+    private var aiService = EnhancedAIService.shared
     
     var body: some View {
         NavigationView {
@@ -100,9 +93,8 @@ struct ChatTab: View {
                                             .id("typing")
                                     }
                                     
-                                    // 显示智能推荐问题（增强版）
-                                    if settingsManager.aiMode == .enhanced && 
-                                       !isTyping && 
+                                    // 显示智能推荐问题
+                                    if !isTyping && 
                                        !recommendationEngine.suggestedQuestions.isEmpty &&
                                        !messages.isEmpty {
                                         SuggestedQuestionsView(
@@ -144,7 +136,6 @@ struct ChatTab: View {
             .navigationBarHidden(true)
             .onAppear {
                 loadChatHistory()
-                setupAIModeListener()
                 initializeCloudServices()
             }
             .alert("配额提醒", isPresented: $showQuotaAlert) {
@@ -178,9 +169,8 @@ struct ChatTab: View {
         inputText = ""
         isTyping = true
         
-        // 检测当前场景（增强版功能）
-        let currentScene: ConversationScene = settingsManager.aiMode == .enhanced ? 
-            EnhancedAIService.shared.currentScene : .greeting
+        // 检测当前场景
+        let currentScene = EnhancedAIService.shared.currentScene
         
         // 智能判断是否使用流式响应
         let shouldUseStreaming = StreamingDetector.shouldUseStreaming(
@@ -189,7 +179,7 @@ struct ChatTab: View {
             settings: settingsManager
         )
         
-        if shouldUseStreaming && settingsManager.aiMode == .enhanced {
+        if shouldUseStreaming {
             // 使用流式响应
             sendStreamingMessage(messageText, scene: currentScene)
         } else {
@@ -203,16 +193,11 @@ struct ChatTab: View {
         Task {
             let response: String
             
-            // 根据AI模式和网络状态选择合适的方法
-            if settingsManager.aiMode == .standard {
-                response = await AIService.shared.sendMessage(messageText)
+            // 使用增强版AI（集成知识库）
+            if AuthManager.shared.currentUser != nil && networkMonitor.isConnected {
+                response = await EnhancedAIService.shared.sendMessageWithCloud(messageText)
             } else {
-                // 增强版支持云端同步
-                if AuthManager.shared.currentUser != nil && networkMonitor.isConnected {
-                    response = await EnhancedAIService.shared.sendMessageWithCloud(messageText)
-                } else {
-                    response = await EnhancedAIService.shared.sendMessage(messageText)
-                }
+                response = await EnhancedAIService.shared.sendMessage(messageText)
             }
             
             await MainActor.run {
@@ -233,13 +218,11 @@ struct ChatTab: View {
                     showQuotaAlert = true
                 }
                 
-                // 增强版：生成智能推荐问题
-                if settingsManager.aiMode == .enhanced {
-                    recommendationEngine.generateQuestionSuggestions(
-                        basedOn: messageText,
-                        response: response
-                    )
-                }
+                // 生成智能推荐问题
+                recommendationEngine.generateQuestionSuggestions(
+                    basedOn: messageText,
+                    response: response
+                )
                 
                 // 记录统计
                 StreamingAnalytics.shared.recordUsage(
@@ -363,12 +346,8 @@ struct ChatTab: View {
     // 清空聊天
     private func clearChat() {
         messages = []
-        // 重置对应的AI服务
-        if settingsManager.aiMode == .standard {
-            AIService.shared.resetConversation()
-        } else {
-            EnhancedAIService.shared.resetConversation()
-        }
+        // 重置AI服务
+        EnhancedAIService.shared.resetConversation()
         UserDefaults.standard.removeObject(forKey: "ChatHistory")
     }
     
@@ -389,27 +368,11 @@ struct ChatTab: View {
         }
     }
     
-    // 设置AI模式监听器
-    private func setupAIModeListener() {
-        NotificationCenter.default.publisher(for: .aiModeChanged)
-            .sink { _ in
-                // AI模式改变时清空聊天并重置
-                clearChat()
-                // 显示模式切换提示
-                let modeMessage = ChatMessage(
-                    id: UUID(),
-                    content: "已切换到\(settingsManager.aiMode.rawValue)模式 ✨",
-                    isFromUser: false,
-                    timestamp: Date()
-                )
-                messages.append(modeMessage)
-            }
-            .store(in: &cancellables)
-    }
+    // AI模式监听器已移除 - 统一使用增强版本
     
     // 初始化云端服务
     private func initializeCloudServices() {
-        guard settingsManager.aiMode == .enhanced else { return }
+        // 总是使用增强功能
         
         Task {
             isInitializing = true
@@ -439,20 +402,13 @@ struct WelcomeMessageView: View {
     @StateObject private var recommendationEngine = SmartRecommendationEngine.shared
     
     private func getQuestions() -> [String] {
-        if settingsManager.aiMode == .enhanced {
-            // 增强版提供的智能问题
-            let smartQuestions = recommendationEngine.suggestedQuestions
-            if !smartQuestions.isEmpty {
-                return smartQuestions
-            }
-            // 如果没有智能推荐，返回默认推荐
-            return EnhancedAIService.shared.suggestedQuestions
-        } else {
-            // 标准版的基础问题
-            return AIService.getQuickQuestions(
-                hasChart: userDataManager.hasGeneratedChart
-            )
+        // 使用增强版提供的智能问题
+        let smartQuestions = recommendationEngine.suggestedQuestions
+        if !smartQuestions.isEmpty {
+            return smartQuestions
         }
+        // 如果没有智能推荐，返回默认推荐
+        return EnhancedAIService.shared.suggestedQuestions
     }
     
     var body: some View {
@@ -516,8 +472,8 @@ struct WelcomeMessageView: View {
                         }
                     }
                     
-                    // 增强版显示智能推荐
-                    if settingsManager.aiMode == .enhanced && !recommendationEngine.currentRecommendations.isEmpty {
+                    // 显示智能推荐
+                    if !recommendationEngine.currentRecommendations.isEmpty {
                         VStack(spacing: 10) {
                             Text("智能推荐")
                                 .font(.system(size: 14))

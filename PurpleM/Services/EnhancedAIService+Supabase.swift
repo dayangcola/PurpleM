@@ -358,17 +358,23 @@ extension EnhancedAIService {
     }
     
     // MARK: - 搜索知识库增强
-    func searchKnowledgeBase(query: String) async -> [String] {
+    func searchKnowledgeBase(query: String) async -> [(citation: String, content: String)] {
         do {
-            let results = try await SupabaseManager.shared.searchKnowledge(query: query)
+            // 使用新的text_search函数搜索知识库
+            let results = try await SupabaseManager.shared.searchKnowledgeWithTextSearch(query: query, limit: 5)
             
-            // 提取相关知识
+            // 提取相关知识并格式化引用
             return results.compactMap { item in
-                if let term = item["term"] as? String,
-                   let definition = item["definition"] as? String {
-                    return "\(term): \(definition)"
+                guard let content = item["content"] as? String,
+                      let chapter = item["chapter"] as? String else {
+                    return nil
                 }
-                return nil
+                
+                // 创建引用格式
+                let citation = "《紫微斗数知识库·\(chapter)》"
+                
+                // 截取内容预览（保留完整内容用于上下文）
+                return (citation: citation, content: content)
             }
         } catch {
             print("搜索知识库失败: \(error)")
