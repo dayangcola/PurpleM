@@ -262,7 +262,10 @@ class SupabaseManager: ObservableObject {
     private init() {
         // 从配置文件读取
         self.baseURL = SupabaseConfig.url.absoluteString
+        // 使用anon key - 需要配置正确的RLS策略
+        // 请确保已在Supabase控制台应用fix-rls-policies.sql
         self.apiKey = SupabaseConfig.anonKey
+        print("🔑 使用Anon Key - 请确保已应用RLS策略")
         
         // 监听认证状态变化
         setupAuthListener()
