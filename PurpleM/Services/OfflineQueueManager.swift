@@ -306,10 +306,17 @@ class OfflineQueueManager: ObservableObject {
                 var updatedItem = dequeue()!
                 updatedItem.retryCount += 1
                 
-                if updatedItem.canRetry {
+                // 使用智能重试策略
+                let shouldRetry = SafeDataManager.shared.shouldRetryOperation(
+                    error: error,
+                    retryCount: updatedItem.retryCount
+                )
+                
+                if shouldRetry && updatedItem.canRetry {
                     failedItems.append(updatedItem)
+                    print("📝 操作将重试: \(updatedItem.id)")
                 } else {
-                    print("超过最大重试次数，丢弃: \(updatedItem.id)")
+                    print("🗑 永久性错误或超过重试，丢弃: \(updatedItem.id)")
                 }
             }
             
