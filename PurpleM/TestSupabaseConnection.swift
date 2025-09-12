@@ -210,7 +210,7 @@ struct TestSupabaseConnection: View {
             let testUserId = UUID().uuidString
             let session = try await SupabaseManager.shared.createChatSession(
                 userId: testUserId,
-                sessionType: "test",
+                sessionType: "general",  // 使用有效的session_type值
                 title: "测试会话"
             )
             

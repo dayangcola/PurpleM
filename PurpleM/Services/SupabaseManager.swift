@@ -466,9 +466,10 @@ class SupabaseManager: ObservableObject {
             print("获取会话失败: \(error)")
         }
         
-        // 创建新会话
-        let scene = EnhancedAIService.shared.currentScene.rawValue
-        return try await createChatSession(userId: userId, sessionType: scene)
+        // 创建新会话 - 使用数据库兼容的值
+        let scene = EnhancedAIService.shared.currentScene
+        let sessionType = scene.databaseValue
+        return try await createChatSession(userId: userId, sessionType: sessionType)
     }
     
     // MARK: - 消息管理
@@ -516,10 +517,17 @@ class SupabaseManager: ObservableObject {
     ) async throws {
         let jsonData = try JSONEncoder().encode(preferences)
         
+        // 使用UPSERT（插入或更新）避免重复键冲突
+        // Prefer: resolution=merge-duplicates 告诉Supabase进行UPSERT
+        let headers = [
+            "Prefer": "resolution=merge-duplicates"
+        ]
+        
         _ = try await makeRequest(
-            endpoint: "/rest/v1/user_ai_preferences",
+            endpoint: "/rest/v1/user_ai_preferences?on_conflict=user_id",
             method: "POST",
             body: jsonData,
+            headers: headers,
             expecting: [UserAIPreferencesDB].self
         )
     }

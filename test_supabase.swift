@@ -27,7 +27,7 @@ func testSupabaseConnection() {
     let testData: [String: Any] = [
         "id": UUID().uuidString,
         "user_id": UUID().uuidString,
-        "session_type": "test",
+        "session_type": "general",  // 使用有效的会话类型
         "title": "Test Session - \(Date())",
         "created_at": ISO8601DateFormatter().string(from: Date()),
         "updated_at": ISO8601DateFormatter().string(from: Date())

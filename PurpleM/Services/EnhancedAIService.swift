@@ -17,6 +17,20 @@ enum ConversationScene: String {
     case counseling = "咨询"
     case emergency = "情绪支持"
     
+    // 数据库值映射（数据库使用英文值）
+    var databaseValue: String {
+        switch self {
+        case .greeting, .emergency:
+            return "general"
+        case .chartReading:
+            return "chart_reading"
+        case .fortuneTelling:
+            return "fortune"
+        case .learning, .counseling:
+            return "consultation"
+        }
+    }
+    
     var systemPrompt: String {
         switch self {
         case .greeting:
