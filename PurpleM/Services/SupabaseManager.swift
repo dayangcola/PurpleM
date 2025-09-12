@@ -351,14 +351,28 @@ class SupabaseManager: ObservableObject {
         
         let (data, response) = try await URLSession.shared.data(for: request)
         
-        // 检查HTTP状态码
-        if let httpResponse = response as? HTTPURLResponse,
-           httpResponse.statusCode >= 400 {
-            let error = try? JSONDecoder().decode(SupabaseError.self, from: data)
-            throw error ?? URLError(.badServerResponse)
+        // 打印调试信息
+        if let httpResponse = response as? HTTPURLResponse {
+            print("📡 Response Status: \(httpResponse.statusCode) for \(request.url?.absoluteString ?? "")")
+            
+            // 检查HTTP状态码
+            if httpResponse.statusCode >= 400 {
+                let errorMessage = String(data: data, encoding: .utf8) ?? "Unknown error"
+                print("❌ Server Error: \(errorMessage)")
+                throw APIError.serverError(httpResponse.statusCode)
+            }
         }
         
-        return try JSONDecoder().decode(T.self, from: data)
+        // 尝试解析响应
+        do {
+            return try JSONDecoder().decode(T.self, from: data)
+        } catch {
+            // 打印原始响应以便调试
+            let responseString = String(data: data, encoding: .utf8) ?? "Unable to decode"
+            print("❌ Decode Error: \(error)")
+            print("📝 Raw Response: \(responseString)")
+            throw APIError.decodingError(error)
+        }
     }
     
     // MARK: - RPC调用
@@ -409,7 +423,7 @@ class SupabaseManager: ObservableObject {
         let jsonData = try JSONSerialization.data(withJSONObject: session)
         
         let response = try await makeRequest(
-            endpoint: "chat_sessions",
+            endpoint: "/rest/v1/chat_sessions",
             method: "POST",
             body: jsonData,
             expecting: [ChatSessionDB].self
@@ -433,7 +447,7 @@ class SupabaseManager: ObservableObject {
         let today = Calendar.current.startOfDay(for: Date())
         let todayString = ISO8601DateFormatter().string(from: today)
         
-        let endpoint = "chat_sessions?user_id=eq.\(userId)&created_at=gte.\(todayString)&order=created_at.desc&limit=1"
+        let endpoint = "/rest/v1/chat_sessions?user_id=eq.\(userId)&created_at=gte.\(todayString)&order=created_at.desc&limit=1"
         
         do {
             let sessions = try await makeRequest(
@@ -484,7 +498,7 @@ class SupabaseManager: ObservableObject {
     }
     
     func getRecentMessages(userId: String, limit: Int = 20) async throws -> [ChatMessageDB] {
-        let endpoint = "chat_messages?user_id=eq.\(userId)&order=created_at.desc&limit=\(limit)"
+        let endpoint = "/rest/v1/chat_messages?user_id=eq.\(userId)&order=created_at.desc&limit=\(limit)"
         
         return try await makeRequest(
             endpoint: endpoint,
@@ -508,7 +522,7 @@ class SupabaseManager: ObservableObject {
     }
     
     func getUserPreferences(userId: String) async throws -> UserAIPreferencesDB? {
-        let endpoint = "user_ai_preferences?user_id=eq.\(userId)"
+        let endpoint = "/rest/v1/user_ai_preferences?user_id=eq.\(userId)"
         
         let preferences = try await makeRequest(
             endpoint: endpoint,
@@ -520,7 +534,7 @@ class SupabaseManager: ObservableObject {
     
     // MARK: - 配额管理
     func getUserQuota(userId: String) async throws -> UserQuotaDB? {
-        let endpoint = "user_ai_quotas?user_id=eq.\(userId)"
+        let endpoint = "/rest/v1/user_ai_quotas?user_id=eq.\(userId)"
         
         let quotas = try await makeRequest(
             endpoint: endpoint,
