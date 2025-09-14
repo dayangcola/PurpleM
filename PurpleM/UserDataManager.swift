@@ -166,7 +166,7 @@ class UserDataManager: ObservableObject {
     
     private let userInfoKey = "PurpleM_UserInfo"
     private let chartDataKey = "PurpleM_ChartData"
-    private var currentUserId: String?
+    var currentUserId: String?
     private var isLoadingFromCloud: Bool = false  // 防止循环同步的标志
     
     private init() {

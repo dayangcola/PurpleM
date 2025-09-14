@@ -11,6 +11,7 @@ struct SignUpView: View {
     @State private var isLoading = false
     @State private var errorMessage = ""
     @State private var showingSuccessAlert = false
+    @State private var isAutoLoggingIn = false
     
     var body: some View {
         NavigationStack {
@@ -149,6 +150,12 @@ struct SignUpView: View {
                                     ProgressView()
                                         .progressViewStyle(CircularProgressViewStyle(tint: .white))
                                         .scaleEffect(0.8)
+                                } else if isAutoLoggingIn {
+                                    HStack(spacing: 8) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                        Text("注册成功，正在登录...")
+                                    }
+                                    .fontWeight(.semibold)
                                 } else {
                                     Text("注册")
                                         .fontWeight(.semibold)
@@ -210,21 +217,32 @@ struct SignUpView: View {
                     dismiss()
                 }
             } message: {
-                Text("账号创建成功，请登录")
+                Text("账号创建成功，正在自动登录...")
             }
         }
         .onChange(of: authManager.authState) { _, newState in
             switch newState {
             case .authenticated:
-                // Registration successful, dismiss
-                dismiss()
+                // 注册成功并自动登录，显示欢迎信息
+                isAutoLoggingIn = true
+                isLoading = false
+                
+                // 延迟一下让用户看到成功状态
+                Task {
+                    try? await Task.sleep(nanoseconds: 500_000_000) // 0.5秒
+                    await MainActor.run {
+                        dismiss()
+                    }
+                }
             case .error(let message):
                 errorMessage = message
                 isLoading = false
+                isAutoLoggingIn = false
             case .loading:
                 isLoading = true
             case .unauthenticated:
                 isLoading = false
+                isAutoLoggingIn = false
             }
         }
     }

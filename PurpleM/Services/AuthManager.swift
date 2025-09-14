@@ -260,6 +260,11 @@ class AuthManager: ObservableObject {
                         
                         // 新用户注册成功后初始化默认数据
                         await AuthSyncManager.shared.handlePostRegistration(user: authResponse.user)
+                        
+                        // 注册成功后，触发星盘数据加载（如果需要）
+                        UserDataManager.shared.currentUserId = authResponse.user.id
+                        // 新用户可能还没有星盘数据，但可以准备好数据管理器
+                        print("📊 新用户注册成功，数据管理器已准备就绪")
                     } catch {
                         print("❌ 新用户Profile同步失败: \(error)")
                         // 新用户注册后Profile同步更重要，添加重试
