@@ -131,19 +131,48 @@ class AuthManager: ObservableObject {
                 UserDefaults.standard.set(userData, forKey: "currentUser")
             }
             
-            // Save access token
+            // Save access token securely to Keychain
             if let token = authResponse.accessToken {
-                UserDefaults.standard.set(token, forKey: "accessToken")
+                KeychainManager.shared.saveAuthTokens(
+                    accessToken: token,
+                    refreshToken: authResponse.refreshToken
+                )
             }
             
-            // 确保用户Profile存在
-            Task {
+            // 使用新的同步管理器确保用户Profile存在
+            Task { @MainActor in
                 do {
-                    try await UserProfileManager.shared.ensureUserProfile(for: authResponse.user)
-                    print("✅ 用户Profile已确保存在")
+                    try await AuthSyncManager.shared.ensureAuthUserProfileSync(
+                        authUserId: authResponse.user.id,
+                        email: authResponse.user.email,
+                        username: authResponse.user.username
+                    )
+                    print("✅ 用户Profile同步完成")
+                    
+                    // 星盘数据加载已移至UserDataManager统一处理
+                    // 通过AuthStateChanged通知触发加载
+                    print("📊 星盘数据将由UserDataManager自动加载")
                 } catch {
-                    print("⚠️ 创建Profile失败: \(error)")
-                    // Profile创建失败不影响登录，但记录错误
+                    print("❌ Profile同步失败: \(error)")
+                    // 添加重试机制
+                    Task { @MainActor in
+                        try? await Task.sleep(nanoseconds: 2_000_000_000) // 等待2秒
+                        do {
+                            try await AuthSyncManager.shared.ensureAuthUserProfileSync(
+                                authUserId: authResponse.user.id,
+                                email: authResponse.user.email,
+                                username: authResponse.user.username
+                            )
+                            print("✅ Profile同步重试成功")
+                        } catch {
+                            print("❌ Profile同步重试失败: \(error)")
+                            // 发送通知提醒用户
+                            NotificationCenter.default.post(
+                                name: NSNotification.Name("ProfileSyncFailed"),
+                                object: error
+                            )
+                        }
+                    }
                 }
             }
             
@@ -213,8 +242,48 @@ class AuthManager: ObservableObject {
                     UserDefaults.standard.set(userData, forKey: "currentUser")
                 }
                 
-                // Save access token
-                UserDefaults.standard.set(authResponse.accessToken!, forKey: "accessToken")
+                // Save access token securely to Keychain
+                KeychainManager.shared.saveAuthTokens(
+                    accessToken: authResponse.accessToken,
+                    refreshToken: authResponse.refreshToken
+                )
+                
+                // 确保用户Profile同步到数据库
+                Task { @MainActor in
+                    do {
+                        try await AuthSyncManager.shared.ensureAuthUserProfileSync(
+                            authUserId: authResponse.user.id,
+                            email: authResponse.user.email,
+                            username: username
+                        )
+                        print("✅ 新用户Profile同步完成")
+                        
+                        // 新用户注册成功后初始化默认数据
+                        await AuthSyncManager.shared.handlePostRegistration(user: authResponse.user)
+                    } catch {
+                        print("❌ 新用户Profile同步失败: \(error)")
+                        // 新用户注册后Profile同步更重要，添加重试
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 3_000_000_000) // 等待3秒
+                            do {
+                                try await AuthSyncManager.shared.ensureAuthUserProfileSync(
+                                    authUserId: authResponse.user.id,
+                                    email: authResponse.user.email,
+                                    username: username
+                                )
+                                print("✅ 新用户Profile同步重试成功")
+                            } catch {
+                                print("❌ 新用户Profile同步重试失败: \(error)")
+                            }
+                        }
+                    }
+                }
+                
+                // 发送认证状态变化通知
+                NotificationCenter.default.post(
+                    name: NSNotification.Name("AuthStateChanged"),
+                    object: nil
+                )
             } else {
                 // Need email verification
                 print("⚠️ Email verification required")
@@ -237,7 +306,7 @@ class AuthManager: ObservableObject {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             
-            if let token = UserDefaults.standard.string(forKey: "accessToken") {
+            if let token = KeychainManager.shared.getAccessToken() {
                 request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
             }
             
@@ -278,7 +347,7 @@ class AuthManager: ObservableObject {
                 var request = URLRequest(url: url)
                 request.httpMethod = "GET"
                 
-                if let token = UserDefaults.standard.string(forKey: "accessToken") {
+                if let token = KeychainManager.shared.getAccessToken() {
                     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
                 }
                 
@@ -302,7 +371,8 @@ class AuthManager: ObservableObject {
     
     private func clearLocalData() {
         UserDefaults.standard.removeObject(forKey: "currentUser")
-        UserDefaults.standard.removeObject(forKey: "accessToken")
+        // Clear tokens from Keychain
+        KeychainManager.shared.clearAuthData()
         self.currentUser = nil
         self.authState = .unauthenticated
         

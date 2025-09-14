@@ -20,19 +20,112 @@ struct CloudChartData: Codable {
     let generatedAt: Date
     let updatedAt: Date
     
+    // CodingKeys确保与数据库字段映射正确
+    enum CodingKeys: String, CodingKey {
+        case id
+        case userId = "user_id"
+        case chartData = "chart_data"
+        case chartImageUrl = "chart_image_url"
+        case interpretationSummary = "interpretation_summary"
+        case version
+        case isPrimary = "is_primary"
+        case generatedAt = "generated_at"  // star_charts表使用generated_at
+        case updatedAt = "updated_at"
+    }
+    
+    // 自定义解码器来处理日期字符串
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+        userId = try container.decode(String.self, forKey: .userId)
+        chartData = try container.decode(ChartDataPayload.self, forKey: .chartData)
+        chartImageUrl = try container.decodeIfPresent(String.self, forKey: .chartImageUrl)
+        interpretationSummary = try container.decodeIfPresent(String.self, forKey: .interpretationSummary)
+        version = try container.decode(String.self, forKey: .version)
+        isPrimary = try container.decode(Bool.self, forKey: .isPrimary)
+        
+        // 解析generatedAt - 支持ISO8601字符串格式
+        if let dateString = try? container.decode(String.self, forKey: .generatedAt) {
+            let formatter = ISO8601DateFormatter()
+            // 尝试带时区的格式
+            formatter.formatOptions = [.withInternetDateTime, .withTimeZone]
+            if let date = formatter.date(from: dateString) {
+                generatedAt = date
+            } else {
+                // 尝试不带时区的格式
+                formatter.formatOptions = [.withInternetDateTime]
+                generatedAt = formatter.date(from: dateString) ?? Date()
+            }
+        } else if let timestamp = try? container.decode(Double.self, forKey: .generatedAt) {
+            // 支持时间戳格式
+            generatedAt = Date(timeIntervalSince1970: timestamp)
+        } else {
+            generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        }
+        
+        // 解析updatedAt - 支持ISO8601字符串格式
+        if let dateString = try? container.decode(String.self, forKey: .updatedAt) {
+            let formatter = ISO8601DateFormatter()
+            // 尝试带时区的格式
+            formatter.formatOptions = [.withInternetDateTime, .withTimeZone]
+            if let date = formatter.date(from: dateString) {
+                updatedAt = date
+            } else {
+                // 尝试不带时区的格式
+                formatter.formatOptions = [.withInternetDateTime]
+                updatedAt = formatter.date(from: dateString) ?? Date()
+            }
+        } else if let timestamp = try? container.decode(Double.self, forKey: .updatedAt) {
+            // 支持时间戳格式
+            updatedAt = Date(timeIntervalSince1970: timestamp)
+        } else {
+            updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        }
+    }
+    
+    // 自定义编码器
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        
+        try container.encodeIfPresent(id, forKey: .id)
+        try container.encode(userId, forKey: .userId)
+        try container.encode(chartData, forKey: .chartData)
+        try container.encodeIfPresent(chartImageUrl, forKey: .chartImageUrl)
+        try container.encodeIfPresent(interpretationSummary, forKey: .interpretationSummary)
+        try container.encode(version, forKey: .version)
+        try container.encode(isPrimary, forKey: .isPrimary)
+        
+        // 编码为ISO8601字符串
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withTimeZone]
+        try container.encode(formatter.string(from: generatedAt), forKey: .generatedAt)
+        try container.encode(formatter.string(from: updatedAt), forKey: .updatedAt)
+    }
+    
     // 转换为本地ChartData
-    func toLocalChartData() -> ChartData {
+    func toLocalChartData() -> ChartData? {
+        // 如果没有userInfo，返回nil
+        guard let userInfo = chartData.userInfo else {
+            return nil
+        }
+        
         return ChartData(
             jsonData: chartData.jsonData,
             generatedDate: generatedAt,
-            userInfo: chartData.userInfo
+            userInfo: userInfo
         )
     }
 }
 
 struct ChartDataPayload: Codable {
     let jsonData: String
-    let userInfo: UserInfo
+    let userInfo: UserInfo?  // 可选，因为返回的数据可能没有这个字段
+    
+    enum CodingKeys: String, CodingKey {
+        case jsonData = "jsonData"
+        case userInfo = "user_info"  // 映射到正确的字段名
+    }
 }
 
 // MARK: - SupabaseManager 星盘扩展
@@ -40,42 +133,47 @@ extension SupabaseManager {
     
     // MARK: - 获取用户星盘
     func getUserChart(userId: String) async throws -> CloudChartData? {
-        let endpoint = "\(baseURL)/rest/v1/star_charts"
+        let endpoint = "/rest/v1/star_charts"
+        let queryParams = [
+            "user_id": "eq.\(userId)",
+            "is_primary": "eq.true"
+        ]
         
-        guard let url = URL(string: endpoint) else {
-            throw APIError.invalidResponse
+        print("🔍 查询星盘数据: userId=\(userId)")
+        
+        // 获取用户token（从UserDefaults中获取）
+        let userToken = KeychainManager.shared.getAccessToken()
+        
+        guard let data = try await SupabaseAPIHelper.get(
+            endpoint: endpoint,
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken,
+            queryParams: queryParams
+        ) else {
+            print("❌ 获取星盘数据失败：无响应")
+            return nil
         }
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue(apiKey, forHTTPHeaderField: "apikey")
-        request.setValue("eq.\(userId)", forHTTPHeaderField: "user_id")
-        request.setValue("eq.true", forHTTPHeaderField: "is_primary")
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 200 else {
-            throw APIError.invalidResponse
-        }
+        print("📦 原始响应数据: \(String(data: data, encoding: .utf8) ?? "无法解码")")
         
         let charts = try JSONDecoder().decode([CloudChartData].self, from: data)
+        print("📊 解析到 \(charts.count) 个星盘")
         return charts.first
     }
     
     // MARK: - 保存星盘到云端
     func saveChartToCloud(userId: String, chartData: ChartData) async throws -> CloudChartData {
-        let endpoint = "\(baseURL)/rest/v1/star_charts"
+        let endpoint = "/rest/v1/star_charts"
         
-        guard let url = URL(string: endpoint) else {
-            throw APIError.invalidResponse
-        }
+        // 获取用户token（从UserDefaults中获取）
+        let userToken = KeychainManager.shared.getAccessToken()
         
-        // 构建云端数据
+        // 构建云端数据（使用camelCase，让helper自动转换）
         let cloudChart = [
-            "user_id": userId,
-            "chart_data": [
+            "userId": userId,
+            "chartData": [
                 "jsonData": chartData.jsonData,
                 "userInfo": [
                     "name": chartData.userInfo.name,
@@ -87,40 +185,39 @@ extension SupabaseManager {
                 ]
             ],
             "version": "1.0",
-            "is_primary": true
+            "isPrimary": true,
+            "generatedAt": ISO8601DateFormatter().string(from: chartData.generatedDate),
+            "updatedAt": ISO8601DateFormatter().string(from: Date())
         ] as [String : Any]
         
-        let jsonData = try JSONSerialization.data(withJSONObject: cloudChart)
-        
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue(apiKey, forHTTPHeaderField: "apikey")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("return=representation", forHTTPHeaderField: "Prefer")
-        request.httpBody = jsonData
-        
-        let (data, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 201 else {
+        guard let data = try await SupabaseAPIHelper.post(
+            endpoint: endpoint,
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken,
+            body: cloudChart,
+            useFieldMapping: true
+        ) else {
+            print("❌ 保存星盘失败：无响应数据")
             throw APIError.invalidResponse
         }
         
+        print("✅ 星盘已成功保存到云端")
         let savedChart = try JSONDecoder().decode(CloudChartData.self, from: data)
         return savedChart
     }
     
     // MARK: - 更新星盘
     func updateChartInCloud(chartId: String, chartData: ChartData) async throws {
-        let endpoint = "\(baseURL)/rest/v1/star_charts?id=eq.\(chartId)"
+        let endpoint = "/rest/v1/star_charts?id=eq.\(chartId)"
         
-        guard let url = URL(string: endpoint) else {
-            throw APIError.invalidResponse
-        }
+        // 获取用户token（从UserDefaults中获取）
+        let userToken = KeychainManager.shared.getAccessToken()
         
+        // 使用camelCase，让helper自动转换
         let updateData = [
-            "chart_data": [
+            "chartData": [
                 "jsonData": chartData.jsonData,
                 "userInfo": [
                     "name": chartData.userInfo.name,
@@ -131,45 +228,38 @@ extension SupabaseManager {
                     "isLunarDate": chartData.userInfo.isLunarDate
                 ]
             ],
-            "updated_at": ISO8601DateFormatter().string(from: Date())
+            "updatedAt": ISO8601DateFormatter().string(from: Date())
         ] as [String : Any]
         
-        let jsonData = try JSONSerialization.data(withJSONObject: updateData)
+        _ = try await SupabaseAPIHelper.patch(
+            endpoint: endpoint,
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken,
+            body: updateData,
+            useFieldMapping: true
+        )
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "PATCH"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue(apiKey, forHTTPHeaderField: "apikey")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = jsonData
-        
-        let (_, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 204 else {
-            throw APIError.invalidResponse
-        }
+        print("✅ 星盘已成功更新")
     }
     
     // MARK: - 删除星盘
     func deleteChartFromCloud(chartId: String) async throws {
-        let endpoint = "\(baseURL)/rest/v1/star_charts?id=eq.\(chartId)"
+        let endpoint = "/rest/v1/star_charts?id=eq.\(chartId)"
         
-        guard let url = URL(string: endpoint) else {
-            throw APIError.invalidResponse
-        }
+        // 获取用户token（从UserDefaults中获取）
+        let userToken = KeychainManager.shared.getAccessToken()
         
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.setValue(apiKey, forHTTPHeaderField: "apikey")
+        try await SupabaseAPIHelper.delete(
+            endpoint: endpoint,
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken
+        )
         
-        let (_, response) = try await URLSession.shared.data(for: request)
-        
-        guard let httpResponse = response as? HTTPURLResponse,
-              httpResponse.statusCode == 204 else {
-            throw APIError.invalidResponse
-        }
+        print("✅ 星盘已成功删除")
     }
     
     // MARK: - 同步本地星盘到云端
@@ -202,10 +292,18 @@ extension SupabaseManager {
         }
         
         // 转换并保存到本地
-        let localChart = cloudChart.toLocalChartData()
+        guard let localChart = cloudChart.toLocalChartData() else {
+            print("📊 云端星盘数据格式不正确")
+            return
+        }
+        
         await MainActor.run {
-            UserDataManager.shared.currentChart = localChart
-            print("📊 已从云端加载星盘")
+            // 使用专门的方法设置云端数据，避免触发循环同步
+            UserDataManager.shared.setDataFromCloud(
+                user: localChart.userInfo,
+                chart: localChart
+            )
+            print("📊 已从云端加载星盘和用户信息")
         }
     }
 }

@@ -67,13 +67,19 @@ class UserProfileManager: ObservableObject {
     private func fetchProfile(userId: String) async throws -> UserProfile? {
         let endpoint = "/rest/v1/profiles?id=eq.\(userId)"
         
-        let response = try await SupabaseManager.shared.makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        guard let data = try await SupabaseAPIHelper.get(
             endpoint: endpoint,
-            method: "GET",
-            expecting: [UserProfile].self
-        )
+            baseURL: SupabaseManager.shared.baseURL,
+            authType: .authenticated,
+            apiKey: SupabaseManager.shared.apiKey,
+            userToken: userToken
+        ) else {
+            return nil
+        }
         
-        return response.first
+        let profiles = try JSONDecoder().decode([UserProfile].self, from: data)
+        return profiles.first
     }
     
     // MARK: - 创建Profile
@@ -82,7 +88,7 @@ class UserProfileManager: ObservableObject {
             "id": user.id,
             "email": user.email,
             "username": user.username ?? user.email.components(separatedBy: "@").first ?? "用户",
-            "avatar_url": user.avatarUrl,
+            "avatar_url": user.avatarUrl as Any,
             "subscription_tier": user.subscriptionTier ?? "free",
             "quota_limit": getQuotaLimit(for: user.subscriptionTier ?? "free"),
             "quota_used": 0,
@@ -90,16 +96,22 @@ class UserProfileManager: ObservableObject {
             "updated_at": ISO8601DateFormatter().string(from: Date())
         ]
         
-        let jsonData = try JSONSerialization.data(withJSONObject: profileData)
-        
-        let profiles = try await SupabaseManager.shared.makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        // Note: Prefer header for return=representation would be needed here
+        // but SupabaseAPIHelper doesn't support it yet
+        guard let data = try await SupabaseAPIHelper.post(
             endpoint: "/rest/v1/profiles",
-            method: "POST",
-            body: jsonData,
-            headers: ["Prefer": "return=representation"],
-            expecting: [UserProfile].self
-        )
+            baseURL: SupabaseManager.shared.baseURL,
+            authType: .authenticated,
+            apiKey: SupabaseManager.shared.apiKey,
+            userToken: userToken,
+            body: profileData,
+            useFieldMapping: false
+        ) else {
+            throw ProfileError.creationFailed
+        }
         
+        let profiles = try JSONDecoder().decode([UserProfile].self, from: data)
         guard let newProfile = profiles.first else {
             throw ProfileError.creationFailed
         }
@@ -123,14 +135,15 @@ class UserProfileManager: ObservableObject {
             "updated_at": ISO8601DateFormatter().string(from: Date())
         ]
         
-        let jsonData = try JSONSerialization.data(withJSONObject: quotaData)
-        
-        // 使用Data作为返回类型，因为我们不需要解析响应
-        _ = try await SupabaseManager.shared.makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        _ = try await SupabaseAPIHelper.post(
             endpoint: "/rest/v1/user_ai_quotas",
-            method: "POST",
-            body: jsonData,
-            expecting: Data.self
+            baseURL: SupabaseManager.shared.baseURL,
+            authType: .authenticated,
+            apiKey: SupabaseManager.shared.apiKey,
+            userToken: userToken,
+            body: quotaData,
+            useFieldMapping: false
         )
     }
     
@@ -153,16 +166,20 @@ class UserProfileManager: ObservableObject {
         var data = updates
         data["updated_at"] = ISO8601DateFormatter().string(from: Date())
         
-        let jsonData = try JSONSerialization.data(withJSONObject: data)
-        
-        let profiles = try await SupabaseManager.shared.makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        guard let responseData = try await SupabaseAPIHelper.patch(
             endpoint: "/rest/v1/profiles?id=eq.\(userId)",
-            method: "PATCH",
-            body: jsonData,
-            headers: ["Prefer": "return=representation"],
-            expecting: [UserProfile].self
-        )
+            baseURL: SupabaseManager.shared.baseURL,
+            authType: .authenticated,
+            apiKey: SupabaseManager.shared.apiKey,
+            userToken: userToken,
+            body: data,
+            useFieldMapping: false
+        ) else {
+            throw ProfileError.updateFailed
+        }
         
+        let profiles = try JSONDecoder().decode([UserProfile].self, from: responseData)
         if let updatedProfile = profiles.first {
             self.currentProfile = updatedProfile
         }

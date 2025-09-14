@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var authManager: AuthManager
+    @StateObject private var networkPermissionManager = NetworkPermissionManager.shared
     
     var body: some View {
         Group {
@@ -47,5 +48,11 @@ struct ContentView: View {
             }
         }
         .animation(.easeInOut, value: authManager.authState)
+        .sheet(isPresented: $networkPermissionManager.showNetworkPermissionAlert) {
+            NetworkPermissionView()
+        }
+        .alert(isPresented: .constant(false)) {
+            networkPermissionManager.createPermissionAlert()
+        }
     }
 }

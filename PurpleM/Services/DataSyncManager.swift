@@ -26,6 +26,7 @@ class DataSyncManager: ObservableObject {
         // 构建正确的数据格式
         var preferencesData: [String: Any] = [
             "user_id": userId,
+            "created_at": ISO8601DateFormatter().string(from: Date()),
             "updated_at": ISO8601DateFormatter().string(from: Date())
         ]
         
@@ -49,44 +50,34 @@ class DataSyncManager: ObservableObject {
             preferencesData["enable_suggestions"] = suggestions
         }
         
-        // 使用UPSERT endpoint
+        // 使用原生UPSERT，避免先PATCH后POST的低效模式
         let endpoint = "/rest/v1/user_ai_preferences"
         
-        let jsonData = try JSONSerialization.data(withJSONObject: preferencesData)
-        
-        var headers = [String: String]()
-        headers["Prefer"] = "resolution=merge-duplicates"
-        
-        // 先尝试更新
         do {
-            // 尝试PATCH更新
-            let updateEndpoint = "\(endpoint)?user_id=eq.\(userId)"
-            _ = try await SupabaseManager.shared.makeRequest(
-                endpoint: updateEndpoint,
-                method: "PATCH",
-                body: jsonData,
-                headers: headers,
-                expecting: Data.self
-            )
-            print("✅ 偏好更新成功")
-        } catch {
-            // 如果更新失败（记录不存在），尝试插入
-            print("⚠️ 更新失败，尝试插入新记录...")
+            // 直接使用POST带on_conflict参数来实现UPSERT
+            guard let url = URL(string: "\(SupabaseManager.shared.baseURL)\(endpoint)?on_conflict=user_id") else {
+                throw APIError.invalidURL
+            }
             
-            // 添加创建时间
-            var insertData = preferencesData
-            insertData["created_at"] = ISO8601DateFormatter().string(from: Date())
+            let bodyData = try JSONSerialization.data(withJSONObject: preferencesData)
+            let userToken = KeychainManager.shared.getAccessToken()
             
-            let insertJsonData = try JSONSerialization.data(withJSONObject: insertData)
-            
-            _ = try await SupabaseManager.shared.makeRequest(
-                endpoint: endpoint,
+            let request = SupabaseAPIHelper.createRequest(
+                url: url,
                 method: "POST",
-                body: insertJsonData,
-                headers: headers,
-                expecting: Data.self
+                authType: .authenticated,
+                apiKey: SupabaseManager.shared.apiKey,
+                userToken: userToken,
+                body: bodyData,
+                headers: ["Prefer": "resolution=merge-duplicates"]
             )
-            print("✅ 偏好插入成功")
+            
+            _ = try await SupabaseAPIHelper.executeRequest(request)
+            print("✅ 偏好同步成功（UPSERT）")
+        } catch {
+            // 如果UPSERT失败，记录详细错误
+            print("❌ 偏好同步失败: \(error)")
+            throw error
         }
     }
     
@@ -94,24 +85,10 @@ class DataSyncManager: ObservableObject {
     func syncMemoryData(userId: String, memoryData: [String: Any]) async throws {
         print("🔄 同步记忆数据...")
         
-        // 记忆数据应该存储在user_ai_preferences的custom_personality字段中
-        let jsonData = try JSONSerialization.data(withJSONObject: memoryData)
-        let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
-        
-        let updateData: [String: Any] = [
-            "custom_personality": jsonString,
-            "updated_at": ISO8601DateFormatter().string(from: Date())
-        ]
-        
-        let endpoint = "/rest/v1/user_ai_preferences?user_id=eq.\(userId)"
-        let updateJsonData = try JSONSerialization.data(withJSONObject: updateData)
-        
-        // 使用PATCH更新custom_personality字段
-        _ = try await SupabaseManager.shared.makeRequest(
-            endpoint: endpoint,
-            method: "PATCH",
-            body: updateJsonData,
-            expecting: Data.self
+        // 使用DatabaseFixManager的安全方法
+        try await DatabaseFixManager.shared.safeSyncMemoryData(
+            userId: userId,
+            memoryData: memoryData
         )
         
         print("✅ 记忆数据同步成功")
@@ -137,13 +114,15 @@ class DataSyncManager: ObservableObject {
             "updated_at": ISO8601DateFormatter().string(from: Date())
         ]
         
-        let jsonData = try JSONSerialization.data(withJSONObject: chartRecord)
-        
-        _ = try await SupabaseManager.shared.makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        _ = try await SupabaseAPIHelper.post(
             endpoint: "/rest/v1/star_charts",
-            method: "POST",
-            body: jsonData,
-            expecting: Data.self
+            baseURL: SupabaseManager.shared.baseURL,
+            authType: .authenticated,
+            apiKey: SupabaseManager.shared.apiKey,
+            userToken: userToken,
+            body: chartRecord,
+            useFieldMapping: false
         )
         
         print("✅ 星盘数据同步成功")

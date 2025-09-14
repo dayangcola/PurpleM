@@ -9,17 +9,21 @@ import SwiftUI
 
 struct StarChartTab: View {
     @ObservedObject var iztroManager: IztroManager
-    @StateObject private var userDataManager = UserDataManager.shared
+    @ObservedObject var userDataManager: UserDataManager
     @State private var showInputView = false
     @State private var isGeneratingChart = false
     @State private var selectedTab = 0 // 0:本命盘, 1:大运, 2:流年, 3:流月, 4:流日
+    @State private var hasCheckedData = false
     
     var body: some View {
         NavigationView {
             ZStack {
                 AnimatedBackground()
                 
-                if userDataManager.needsInitialSetup() {
+                if userDataManager.isInitializing {
+                    // 正在初始化，显示加载状态
+                    InitializingView()
+                } else if userDataManager.needsInitialSetup() {
                     // 首次使用，显示欢迎界面
                     WelcomeView(showInputView: $showInputView)
                 } else if userDataManager.canShowChart() {
@@ -70,6 +74,10 @@ struct StarChartTab: View {
             .navigationBarHidden(true)
         }
         .navigationViewStyle(StackNavigationViewStyle())
+        .onAppear {
+            // 确保星盘数据已加载
+            checkAndLoadChartData()
+        }
     }
     
     private func generateChartForCurrentUser() {
@@ -102,6 +110,43 @@ struct StarChartTab: View {
                 isGeneratingChart = false
                 timer.invalidate()
             }
+        }
+    }
+    
+    private func checkAndLoadChartData() {
+        // 只检查一次，避免重复加载
+        guard !hasCheckedData else { return }
+        hasCheckedData = true
+        
+        // 如果用户已登录但没有星盘数据，尝试加载
+        if AuthManager.shared.isAuthenticated && 
+           !userDataManager.hasGeneratedChart && 
+           !userDataManager.isInitializing {
+            print("🔄 StarChartTab: 检测到无星盘数据，尝试加载...")
+            Task {
+                await userDataManager.forceReloadChartData()
+            }
+        }
+    }
+}
+
+// MARK: - 初始化加载视图
+struct InitializingView: View {
+    @State private var isAnimating = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            // 加载动画
+            ProgressView()
+                .progressViewStyle(CircularProgressViewStyle(tint: .starGold))
+                .scaleEffect(1.5)
+            
+            Text("正在加载数据...")
+                .font(.system(size: 16, weight: .light))
+                .foregroundColor(.crystalWhite)
+        }
+        .onAppear {
+            isAnimating = true
         }
     }
 }
@@ -342,6 +387,6 @@ struct ChartTabButton: View {
 
 struct StarChartTab_Previews: PreviewProvider {
     static var previews: some View {
-        StarChartTab(iztroManager: IztroManager())
+        StarChartTab(iztroManager: IztroManager(), userDataManager: UserDataManager.shared)
     }
 }

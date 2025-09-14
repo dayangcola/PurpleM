@@ -257,7 +257,7 @@ class SupabaseManager: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     internal let baseURL: String
     internal let apiKey: String
-    private var authToken: String?
+    // authToken已移除 - 现在直接从KeychainManager获取token
     
     private init() {
         // 从配置文件读取
@@ -343,9 +343,12 @@ class SupabaseManager: ObservableObject {
             request.setValue(value, forHTTPHeaderField: key)
         }
         
-        // 添加认证token
-        if let token = authToken {
+        // 添加认证token - 始终从Keychain获取最新的token
+        if let token = KeychainManager.shared.getAccessToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else {
+            // 如果没有用户token，使用anon key作为后备
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         
         if let body = body {
@@ -393,8 +396,11 @@ class SupabaseManager: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue(apiKey, forHTTPHeaderField: "apikey")
         
-        if let token = authToken {
+        // 从Keychain获取最新的token
+        if let token = KeychainManager.shared.getAccessToken() {
             request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else {
+            request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         }
         
         request.httpBody = try JSONSerialization.data(withJSONObject: params)
@@ -409,8 +415,9 @@ class SupabaseManager: ObservableObject {
         sessionType: String,
         title: String? = nil
     ) async throws -> ChatSessionDB {
+        // 不再手动设置ID，让数据库自动生成
+        // 同时修复错误：确保user_id存在于profiles表中
         let session = [
-            "id": UUID().uuidString,
             "user_id": userId,
             "session_type": sessionType,
             "title": title ?? "对话 - \(Date().formatted())",
@@ -425,12 +432,19 @@ class SupabaseManager: ObservableObject {
         
         let jsonData = try JSONSerialization.data(withJSONObject: session)
         
-        let response = try await makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        guard let data = try await SupabaseAPIHelper.post(
             endpoint: "/rest/v1/chat_sessions",
-            method: "POST",
-            body: jsonData,
-            expecting: [ChatSessionDB].self
-        )
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken,
+            body: session,
+            useFieldMapping: false
+        ) else {
+            throw SupabaseError(message: "创建会话失败", code: "SESSION_CREATE_FAILED")
+        }
+        let response = try JSONDecoder().decode([ChatSessionDB].self, from: data)
         
         guard let newSession = response.first else {
             throw SupabaseError(message: "创建会话失败", code: "SESSION_CREATE_FAILED")
@@ -453,10 +467,17 @@ class SupabaseManager: ObservableObject {
         let endpoint = "/rest/v1/chat_sessions?user_id=eq.\(userId)&created_at=gte.\(todayString)&order=created_at.desc&limit=1"
         
         do {
-            let sessions = try await makeRequest(
+            let userToken = KeychainManager.shared.getAccessToken()
+            guard let data = try await SupabaseAPIHelper.get(
                 endpoint: endpoint,
-                expecting: [ChatSessionDB].self
-            )
+                baseURL: baseURL,
+                authType: .authenticated,
+                apiKey: apiKey,
+                userToken: userToken
+            ) else {
+                throw SupabaseError(message: "获取会话失败", code: "GET_SESSION_FAILED")
+            }
+            let sessions = try JSONDecoder().decode([ChatSessionDB].self, from: data)
             
             if let existingSession = sessions.first {
                 self.currentSession = existingSession
@@ -493,21 +514,32 @@ class SupabaseManager: ObservableObject {
         
         let jsonData = try JSONSerialization.data(withJSONObject: message)
         
-        _ = try await makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        _ = try await SupabaseAPIHelper.post(
             endpoint: "/rest/v1/chat_messages",
-            method: "POST",
-            body: jsonData,
-            expecting: [ChatMessageDB].self
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken,
+            body: message,
+            useFieldMapping: false
         )
     }
     
     func getRecentMessages(userId: String, limit: Int = 20) async throws -> [ChatMessageDB] {
         let endpoint = "/rest/v1/chat_messages?user_id=eq.\(userId)&order=created_at.desc&limit=\(limit)"
         
-        return try await makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        guard let data = try await SupabaseAPIHelper.get(
             endpoint: endpoint,
-            expecting: [ChatMessageDB].self
-        )
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken
+        ) else {
+            return []
+        }
+        return try JSONDecoder().decode([ChatMessageDB].self, from: data)
     }
     
     // MARK: - 用户偏好管理
@@ -518,27 +550,39 @@ class SupabaseManager: ObservableObject {
         let jsonData = try JSONEncoder().encode(preferences)
         
         // 使用UPSERT（插入或更新）避免重复键冲突
-        // Prefer: resolution=merge-duplicates 告诉Supabase进行UPSERT
+        // Prefer: return=representation,resolution=merge-duplicates 告诉Supabase进行UPSERT
         let headers = [
-            "Prefer": "resolution=merge-duplicates"
+            "Prefer": "return=representation,resolution=merge-duplicates"
         ]
         
-        _ = try await makeRequest(
-            endpoint: "/rest/v1/user_ai_preferences?on_conflict=user_id",
-            method: "POST",
-            body: jsonData,
-            headers: headers,
-            expecting: [UserAIPreferencesDB].self
+        // 使用UPSERT endpoint - 明确指定冲突字段
+        let userToken = KeychainManager.shared.getAccessToken()
+        let bodyDict = try JSONSerialization.jsonObject(with: jsonData) as? [String: Any] ?? [:]
+        _ = try await SupabaseAPIHelper.post(
+            endpoint: "/rest/v1/user_ai_preferences",
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken,
+            body: bodyDict,
+            useFieldMapping: false
         )
     }
     
     func getUserPreferences(userId: String) async throws -> UserAIPreferencesDB? {
         let endpoint = "/rest/v1/user_ai_preferences?user_id=eq.\(userId)"
         
-        let preferences = try await makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        guard let data = try await SupabaseAPIHelper.get(
             endpoint: endpoint,
-            expecting: [UserAIPreferencesDB].self
-        )
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken
+        ) else {
+            return nil
+        }
+        let preferences = try JSONDecoder().decode([UserAIPreferencesDB].self, from: data)
         
         return preferences.first
     }
@@ -547,10 +591,17 @@ class SupabaseManager: ObservableObject {
     func getUserQuota(userId: String) async throws -> UserQuotaDB? {
         let endpoint = "/rest/v1/user_ai_quotas?user_id=eq.\(userId)"
         
-        let quotas = try await makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        guard let data = try await SupabaseAPIHelper.get(
             endpoint: endpoint,
-            expecting: [UserQuotaDB].self
-        )
+            baseURL: baseURL,
+            authType: .authenticated,
+            apiKey: apiKey,
+            userToken: userToken
+        ) else {
+            return nil
+        }
+        let quotas = try JSONDecoder().decode([UserQuotaDB].self, from: data)
         
         let quota = quotas.first
         self.userQuota = quota

@@ -106,10 +106,18 @@ class SessionManager: ObservableObject {
         do {
             let endpoint = "/rest/v1/chat_sessions?user_id=eq.\(user.id)&order=created_at.desc&limit=10"
             
-            let sessions = try await SupabaseManager.shared.makeRequest(
+            let userToken = KeychainManager.shared.getAccessToken()
+            guard let data = try await SupabaseAPIHelper.get(
                 endpoint: endpoint,
-                expecting: [ChatSessionDB].self
-            )
+                baseURL: SupabaseManager.shared.baseURL,
+                authType: .authenticated,
+                apiKey: SupabaseManager.shared.apiKey,
+                userToken: userToken
+            ) else {
+                throw SessionError.loadFailed("未获取到会话数据")
+            }
+            
+            let sessions = try JSONDecoder().decode([ChatSessionDB].self, from: data)
             
             self.recentSessions = sessions
             print("📚 加载了 \(sessions.count) 个最近会话")
@@ -128,10 +136,18 @@ class SessionManager: ObservableObject {
         
         let endpoint = "/rest/v1/chat_sessions?user_id=eq.\(userId)&created_at=gte.\(dateString)&created_at=lt.\(nextDayString)&order=created_at.desc"
         
-        return try await SupabaseManager.shared.makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        guard let data = try await SupabaseAPIHelper.get(
             endpoint: endpoint,
-            expecting: [ChatSessionDB].self
-        )
+            baseURL: SupabaseManager.shared.baseURL,
+            authType: .authenticated,
+            apiKey: SupabaseManager.shared.apiKey,
+            userToken: userToken
+        ) else {
+            return []
+        }
+        
+        return try JSONDecoder().decode([ChatSessionDB].self, from: data)
     }
     
     // MARK: - 切换会话
@@ -154,10 +170,13 @@ class SessionManager: ObservableObject {
         
         let endpoint = "/rest/v1/chat_sessions?id=eq.\(sessionId)&user_id=eq.\(user.id)"
         
-        _ = try await SupabaseManager.shared.makeRequest(
+        let userToken = KeychainManager.shared.getAccessToken()
+        _ = try await SupabaseAPIHelper.delete(
             endpoint: endpoint,
-            method: "DELETE",
-            expecting: Data.self
+            baseURL: SupabaseManager.shared.baseURL,
+            authType: .authenticated,
+            apiKey: SupabaseManager.shared.apiKey,
+            userToken: userToken
         )
         
         // 如果删除的是当前会话，清空

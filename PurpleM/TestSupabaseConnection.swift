@@ -312,11 +312,15 @@ struct TestSupabaseConnection: View {
     private func testOfflineQueue() async {
         let result: TestResult
         
+        // 使用真实的Auth用户ID（如果已登录）
+        let userId = AuthManager.shared.currentUser?.id ?? "b6e6ea91-9e1a-453f-8007-ea67a35bd5d1" // test@gmail.com的真实ID
+        let sessionId = UUID().uuidString // 会话ID可以是新的
+        
         // 添加测试项到队列
         OfflineQueueManager.shared.enqueue(
             .saveMessage(
-                sessionId: UUID().uuidString,
-                userId: UUID().uuidString,
+                sessionId: sessionId,
+                userId: userId,
                 role: "user",
                 content: "离线测试",
                 metadata: [:]

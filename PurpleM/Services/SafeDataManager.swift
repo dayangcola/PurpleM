@@ -70,11 +70,19 @@ class SafeDataManager {
     private func verifySession(sessionId: String, userId: String) async -> Bool {
         do {
             let endpoint = "/rest/v1/chat_sessions?id=eq.\(sessionId)&user_id=eq.\(userId)"
-            let sessions = try await SupabaseManager.shared.makeRequest(
-                endpoint: endpoint,
-                expecting: [ChatSessionDB].self
-            )
+            let userToken = KeychainManager.shared.getAccessToken()
             
+            guard let data = try await SupabaseAPIHelper.get(
+                endpoint: endpoint,
+                baseURL: SupabaseManager.shared.baseURL,
+                authType: .authenticated,
+                apiKey: SupabaseManager.shared.apiKey,
+                userToken: userToken
+            ) else {
+                return false
+            }
+            
+            let sessions = try JSONDecoder().decode([ChatSessionDB].self, from: data)
             return !sessions.isEmpty
         } catch {
             print("❌ 验证会话失败: \(error)")

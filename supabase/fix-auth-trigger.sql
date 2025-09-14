@@ -1,137 +1,180 @@
--- ============================================
--- 修复用户注册时的数据库错误
--- ============================================
+-- 修复Auth触发器，确保新用户注册时自动创建所有必需的记录
+-- 在Supabase SQL编辑器中运行此脚本
 
--- 1. 删除可能存在的旧触发器
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-DROP FUNCTION IF EXISTS handle_new_user();
-
--- 2. 创建新的触发器函数（更健壮的版本）
-CREATE OR REPLACE FUNCTION handle_new_user() 
-RETURNS TRIGGER AS $$
-BEGIN
-  -- 插入基础profile数据
-  INSERT INTO public.profiles (
+-- 1. 先为新用户创建profile记录
+INSERT INTO profiles (user_id, username, email, created_at, updated_at)
+SELECT 
     id,
+    COALESCE(raw_user_meta_data->>'username', split_part(email, '@', 1)),
     email,
-    username,
-    subscription_tier,
     created_at,
-    updated_at
-  ) VALUES (
-    new.id,
-    new.email,
-    COALESCE(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
-    'free',
+    NOW()
+FROM auth.users
+WHERE NOT EXISTS (
+    SELECT 1 FROM profiles WHERE profiles.user_id = auth.users.id
+);
+
+-- 2. 为所有没有quota的用户创建quota记录
+INSERT INTO user_ai_quotas (user_id, daily_limit, daily_used, created_at, updated_at)
+SELECT 
+    p.user_id,
+    100,  -- 默认每日限额
+    0,
     NOW(),
     NOW()
-  ) ON CONFLICT (id) DO UPDATE SET
-    email = EXCLUDED.email,
-    updated_at = NOW();
-  
-  -- 初始化AI配额
-  INSERT INTO public.user_ai_quotas (
-    user_id,
-    subscription_tier,
-    daily_limit,
-    monthly_limit,
-    daily_used,
-    monthly_used,
-    total_tokens_used,
-    daily_reset_at,
-    monthly_reset_at
-  ) VALUES (
-    new.id,
-    'free',
-    50,
-    1000,
-    0,
-    0,
-    0,
-    CURRENT_DATE,
-    NOW()
-  ) ON CONFLICT (user_id) DO NOTHING;
-  
-  -- 初始化AI偏好设置
-  INSERT INTO public.user_ai_preferences (
+FROM profiles p
+WHERE NOT EXISTS (
+    SELECT 1 FROM user_ai_quotas q WHERE q.user_id = p.user_id
+);
+
+-- 3. 为所有没有preferences的用户创建preferences记录
+INSERT INTO user_ai_preferences (
     user_id,
     conversation_style,
     response_length,
-    language_complexity,
-    auto_save_sessions,
-    show_interpretation_hints
-  ) VALUES (
-    new.id,
-    'mystical',
+    preferred_topics,
+    enable_suggestions,
+    created_at,
+    updated_at
+)
+SELECT 
+    p.user_id,
+    'balanced',
     'medium',
-    'normal',
+    ARRAY['general'],
     true,
-    true
-  ) ON CONFLICT (user_id) DO NOTHING;
-  
-  RETURN new;
-EXCEPTION
-  WHEN OTHERS THEN
-    -- 记录错误但不阻止用户创建
-    RAISE WARNING 'Error in handle_new_user: %', SQLERRM;
+    NOW(),
+    NOW()
+FROM profiles p
+WHERE NOT EXISTS (
+    SELECT 1 FROM user_ai_preferences pref WHERE pref.user_id = p.user_id
+);
+
+-- 4. 创建或更新触发器函数
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+BEGIN
+    -- 创建profile记录
+    INSERT INTO public.profiles (user_id, username, email, created_at, updated_at)
+    VALUES (
+        new.id,
+        COALESCE(new.raw_user_meta_data->>'username', split_part(new.email, '@', 1)),
+        new.email,
+        NOW(),
+        NOW()
+    );
+    
+    -- 创建quota记录
+    INSERT INTO public.user_ai_quotas (user_id, daily_limit, daily_used, created_at, updated_at)
+    VALUES (
+        new.id,
+        100,  -- 默认每日限额
+        0,
+        NOW(),
+        NOW()
+    );
+    
+    -- 创建preferences记录
+    INSERT INTO public.user_ai_preferences (
+        user_id,
+        conversation_style,
+        response_length,
+        preferred_topics,
+        enable_suggestions,
+        created_at,
+        updated_at
+    )
+    VALUES (
+        new.id,
+        'balanced',
+        'medium',
+        ARRAY['general'],
+        true,
+        NOW(),
+        NOW()
+    );
+    
     RETURN new;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3. 创建触发器
+-- 5. 删除旧触发器（如果存在）
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+
+-- 6. 创建新触发器
 CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW
-  EXECUTE FUNCTION handle_new_user();
+    AFTER INSERT ON auth.users
+    FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- 4. 确保profiles表的约束正确
-ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_email_key;
-ALTER TABLE profiles DROP CONSTRAINT IF EXISTS profiles_username_key;
+-- 7. 验证所有用户都有完整的记录
+SELECT 
+    'Total Auth Users' as metric,
+    COUNT(*) as count
+FROM auth.users
 
--- 重新添加约束（允许NULL）
-ALTER TABLE profiles 
-  ADD CONSTRAINT profiles_email_unique UNIQUE (email);
+UNION ALL
 
-ALTER TABLE profiles 
-  ADD CONSTRAINT profiles_username_unique UNIQUE (username);
+SELECT 
+    'Profiles Created',
+    COUNT(*)
+FROM profiles
 
--- 5. 确保表的RLS策略不会阻止插入
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+UNION ALL
 
--- 删除可能有问题的策略
-DROP POLICY IF EXISTS "Users can insert own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
-DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
+SELECT 
+    'Quotas Created',
+    COUNT(*)
+FROM user_ai_quotas
 
--- 创建新的策略
-CREATE POLICY "Enable insert for authentication" ON profiles
-  FOR INSERT WITH CHECK (true);
+UNION ALL
 
-CREATE POLICY "Enable read for users based on user_id" ON profiles
-  FOR SELECT USING (auth.uid() = id OR auth.uid() IS NOT NULL);
+SELECT 
+    'Preferences Created',
+    COUNT(*)
+FROM user_ai_preferences
 
-CREATE POLICY "Enable update for users based on user_id" ON profiles
-  FOR UPDATE USING (auth.uid() = id);
+UNION ALL
 
--- 6. 授予必要的权限
-GRANT USAGE ON SCHEMA public TO postgres, anon, authenticated, service_role;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO postgres, service_role;
-GRANT SELECT, INSERT, UPDATE ON profiles TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE ON user_ai_quotas TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE ON user_ai_preferences TO anon, authenticated;
+-- 检查是否有用户缺少profile
+SELECT 
+    'Users Missing Profile',
+    COUNT(*)
+FROM auth.users u
+WHERE NOT EXISTS (
+    SELECT 1 FROM profiles p WHERE p.user_id = u.id
+)
 
--- 7. 测试函数
-CREATE OR REPLACE FUNCTION test_user_creation()
-RETURNS text AS $$
-BEGIN
-  RETURN 'User creation setup completed successfully';
-END;
-$$ LANGUAGE plpgsql;
+UNION ALL
 
--- 执行测试
-SELECT test_user_creation();
+-- 检查是否有profile缺少quota
+SELECT 
+    'Profiles Missing Quota',
+    COUNT(*)
+FROM profiles p
+WHERE NOT EXISTS (
+    SELECT 1 FROM user_ai_quotas q WHERE q.user_id = p.user_id
+)
 
--- ============================================
--- 执行完成！现在用户注册应该可以正常工作了
--- ============================================
+UNION ALL
+
+-- 检查是否有profile缺少preferences
+SELECT 
+    'Profiles Missing Preferences',
+    COUNT(*)
+FROM profiles p
+WHERE NOT EXISTS (
+    SELECT 1 FROM user_ai_preferences pref WHERE pref.user_id = p.user_id
+);
+
+-- 8. 显示新用户的详细信息
+SELECT 
+    u.id,
+    u.email,
+    p.user_id as profile_user_id,
+    q.daily_limit as quota_limit,
+    pref.conversation_style as pref_style
+FROM auth.users u
+LEFT JOIN profiles p ON u.id = p.user_id
+LEFT JOIN user_ai_quotas q ON u.id = q.user_id
+LEFT JOIN user_ai_preferences pref ON u.id = pref.user_id
+WHERE u.email = 'test9@gmail.com';

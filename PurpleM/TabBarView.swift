@@ -15,7 +15,7 @@ struct TabBarView: View {
     var body: some View {
         TabView(selection: $selectedTab) {
             // Tab 1: 星盘展示
-            StarChartTab(iztroManager: iztroManager)
+            StarChartTab(iztroManager: iztroManager, userDataManager: userDataManager)
                 .tabItem {
                     Image(systemName: selectedTab == 0 ? "star.circle.fill" : "star.circle")
                     Text("星盘")
