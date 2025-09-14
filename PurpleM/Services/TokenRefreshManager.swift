@@ -14,8 +14,94 @@ class TokenRefreshManager {
     
     private var isRefreshing = false
     private var refreshTask: Task<Bool, Error>?
+    private var tokenExpiryDate: Date?
+    private var refreshTimer: Timer?
     
-    private init() {}
+    private init() {
+        setupTokenExpiryMonitor()
+    }
+    
+    // MARK: - Token过期监控
+    private func setupTokenExpiryMonitor() {
+        // 监听token更新通知
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleTokenUpdate),
+            name: NSNotification.Name("TokenUpdated"),
+            object: nil
+        )
+    }
+    
+    @objc private func handleTokenUpdate() {
+        // 从token中解析过期时间
+        if let token = KeychainManager.shared.getAccessToken() {
+            if let expiryDate = extractExpiryDate(from: token) {
+                tokenExpiryDate = expiryDate
+                schedulePreemptiveRefresh(expiryDate: expiryDate)
+                print("📅 Token将在 \(expiryDate) 过期")
+            }
+        }
+    }
+    
+    // 解析JWT token获取过期时间
+    private func extractExpiryDate(from token: String) -> Date? {
+        let segments = token.split(separator: ".")
+        guard segments.count > 1 else { return nil }
+        
+        let base64String = String(segments[1])
+        // 补齐Base64字符串
+        let paddedLength = (4 - base64String.count % 4) % 4
+        let paddedBase64 = base64String + String(repeating: "=", count: paddedLength)
+        
+        guard let data = Data(base64Encoded: paddedBase64),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let exp = json["exp"] as? TimeInterval else {
+            return nil
+        }
+        
+        return Date(timeIntervalSince1970: exp)
+    }
+    
+    // 安排预先刷新（在过期前5分钟刷新）
+    private func schedulePreemptiveRefresh(expiryDate: Date) {
+        refreshTimer?.invalidate()
+        
+        let refreshDate = expiryDate.addingTimeInterval(-300) // 提前5分钟
+        let timeInterval = refreshDate.timeIntervalSinceNow
+        
+        if timeInterval > 0 {
+            refreshTimer = Timer.scheduledTimer(withTimeInterval: timeInterval, repeats: false) { _ in
+                Task { @MainActor in
+                    print("⏰ Token即将过期，自动刷新...")
+                    await self.refreshTokenIfNeeded()
+                }
+            }
+            print("⏱️ 已安排在 \(refreshDate) 自动刷新Token")
+        } else {
+            // Token已经快过期了，立即刷新
+            Task {
+                await refreshTokenIfNeeded()
+            }
+        }
+    }
+    
+    // 检查Token是否需要刷新
+    func shouldRefreshToken() -> Bool {
+        guard let expiryDate = tokenExpiryDate else {
+            // 没有过期时间信息，检查token是否存在
+            if let token = KeychainManager.shared.getAccessToken() {
+                // 尝试解析过期时间
+                if let expiry = extractExpiryDate(from: token) {
+                    tokenExpiryDate = expiry
+                    return Date().addingTimeInterval(300) > expiry // 5分钟内过期
+                }
+            }
+            return false
+        }
+        
+        // 检查是否在5分钟内过期
+        return Date().addingTimeInterval(300) > expiryDate
+    }
     
     // MARK: - 刷新Token
     private var refreshRetryCount = 0

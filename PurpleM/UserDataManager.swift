@@ -181,6 +181,15 @@ class UserDataManager: ObservableObject {
                 isInitializing = false
             }
             
+            // 首先检查并刷新过期的Token
+            if TokenRefreshManager.shared.shouldRefreshToken() {
+                print("🔄 检测到Token即将过期，尝试刷新...")
+                let refreshSuccess = await TokenRefreshManager.shared.refreshTokenIfNeeded()
+                if !refreshSuccess {
+                    print("⚠️ Token刷新失败，可能需要重新登录")
+                }
+            }
+            
             if let user = AuthManager.shared.currentUser {
                 currentUserId = user.id
                 print("📝 UserDataManager初始化，当前用户ID: \(user.id)")
@@ -349,7 +358,7 @@ class UserDataManager: ObservableObject {
         }
     }
     
-    // 从云端加载数据
+    // 从云端加载数据（支持离线缓存）
     @MainActor
     func loadFromCloud() async {
         guard let userId = currentUserId else { return }
@@ -361,28 +370,60 @@ class UserDataManager: ObservableObject {
             isLoadingFromCloud = false  // 清除加载标志
         }
         
-        do {
-            // 从云端加载星盘（内部会调用setDataFromCloud）
-            try await SupabaseManager.shared.loadChartFromCloud(userId: userId)
+        // 使用智能加载策略：先从缓存加载，然后异步更新
+        let cacheKey = OfflineCacheManager.CacheKey.starChart(userId: userId)
+        
+        // 尝试从缓存加载
+        if let cachedChart = await OfflineCacheManager.shared.load(ChartData.self, forKey: cacheKey) {
+            print("💾 从缓存加载星盘数据")
+            setDataFromCloud(user: cachedChart.userInfo, chart: cachedChart)
             
-            // 加载完成后，记录时间
-            lastSyncTime = Date()
-            
-            print("✅ 成功从云端加载星盘数据")
-            print("📊 当前星盘状态: hasGeneratedChart=\(hasGeneratedChart), hasUserInfo=\(hasUserInfo)")
-            print("📊 数据状态: currentChart=\(currentChart != nil), currentUser=\(currentUser != nil)")
-        } catch {
-            print("❌ 从云端加载失败: \(error)")
-            // 如果云端没有数据，尝试上传本地数据
-            if hasGeneratedChart {
+            // 如果在线，异步更新缓存
+            if NetworkMonitor.shared.isConnected {
                 Task {
-                    try? await SupabaseManager.shared.syncLocalChartToCloud(userId: userId)
+                    do {
+                        try await SupabaseManager.shared.loadChartFromCloud(userId: userId)
+                        lastSyncTime = Date()
+                        print("✅ 云端数据已更新缓存")
+                    } catch {
+                        print("⚠️ 云端更新失败，继续使用缓存: \(error)")
+                    }
+                }
+            }
+        } else {
+            // 缓存没有数据，必须从云端加载
+            do {
+                // 从云端加载星盘（内部会调用setDataFromCloud）
+                try await SupabaseManager.shared.loadChartFromCloud(userId: userId)
+                
+                // 加载成功后缓存数据
+                if let chart = currentChart {
+                    try? await OfflineCacheManager.shared.save(
+                        chart,
+                        forKey: cacheKey,
+                        policy: .cacheWithExpiry(86400) // 缓存24小时
+                    )
+                }
+                
+                // 加载完成后，记录时间
+                lastSyncTime = Date()
+                
+                print("✅ 成功从云端加载星盘数据并缓存")
+                print("📊 当前星盘状态: hasGeneratedChart=\(hasGeneratedChart), hasUserInfo=\(hasUserInfo)")
+                print("📊 数据状态: currentChart=\(currentChart != nil), currentUser=\(currentUser != nil)")
+            } catch {
+                print("❌ 从云端加载失败: \(error)")
+                // 如果云端没有数据，尝试上传本地数据
+                if hasGeneratedChart {
+                    Task {
+                        try? await SupabaseManager.shared.syncLocalChartToCloud(userId: userId)
+                    }
                 }
             }
         }
     }
     
-    // 同步到云端
+    // 同步到云端（同时更新缓存）
     private func syncToCloudIfNeeded() {
         // 使用已保存的currentUserId
         let userId = currentUserId
@@ -406,6 +447,14 @@ class UserDataManager: ObservableObject {
         print("🔄 开始同步星盘到云端，用户ID: \(validUserId)")
         
         Task {
+            // 先保存到本地缓存
+            let cacheKey = OfflineCacheManager.CacheKey.starChart(userId: validUserId)
+            try? await OfflineCacheManager.shared.save(
+                chart,
+                forKey: cacheKey,
+                policy: .cacheWithExpiry(86400) // 缓存24小时
+            )
+            
             do {
                 // 使用重试机制同步星盘
                 try await RetryManager.shared.retrySupabaseOperation(
@@ -417,16 +466,16 @@ class UserDataManager: ObservableObject {
                 
                 await MainActor.run {
                     lastSyncTime = Date()
-                    print("✅ 星盘已同步到云端，用户ID: \(validUserId)")
+                    print("✅ 星盘已同步到云端和缓存，用户ID: \(validUserId)")
                 }
             } catch {
                 print("❌ 同步到云端失败（已重试）: \(error)")
                 print("❌ 用户ID: \(validUserId)")
                 print("❌ 星盘数据存在: \(chart.jsonData.prefix(100))...")
                 
-                // 如果是网络问题，可以考虑加入离线队列
+                // 如果是网络问题，数据已在缓存中
                 if !NetworkMonitor.shared.isConnected {
-                    print("📥 网络不可用，将在网络恢复后自动同步")
+                    print("📥 网络不可用，数据已缓存，将在网络恢复后自动同步")
                 }
             }
         }

@@ -120,6 +120,12 @@ class KeychainManager {
     func saveAuthTokens(accessToken: String?, refreshToken: String?) {
         if let accessToken = accessToken {
             try? save(accessToken, for: .accessToken)
+            // 发送Token更新通知，触发自动刷新调度
+            NotificationCenter.default.post(
+                name: NSNotification.Name("TokenUpdated"),
+                object: nil,
+                userInfo: ["token": accessToken]
+            )
         }
         
         if let refreshToken = refreshToken {

@@ -297,13 +297,21 @@ extension SupabaseManager {
             return
         }
         
+        // 缓存数据到本地以供离线使用
+        let cacheKey = OfflineCacheManager.CacheKey.starChart(userId: userId)
+        try? await OfflineCacheManager.shared.save(
+            localChart,
+            forKey: cacheKey,
+            policy: .cacheWithExpiry(86400) // 缓存24小时
+        )
+        
         await MainActor.run {
             // 使用专门的方法设置云端数据，避免触发循环同步
             UserDataManager.shared.setDataFromCloud(
                 user: localChart.userInfo,
                 chart: localChart
             )
-            print("📊 已从云端加载星盘和用户信息")
+            print("📊 已从云端加载星盘和用户信息并缓存")
         }
     }
 }
