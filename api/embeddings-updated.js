@@ -4,7 +4,7 @@
 import { embed } from 'ai';
 import { openai } from '@ai-sdk/openai';
 
-export const runtime = 'edge';
+export const runtime = 'nodejs';
 
 export default async function handler(req) {
   // 只允许POST请求
@@ -91,8 +91,8 @@ export default async function handler(req) {
 
 // 配置说明
 export const config = {
-  // 使用Edge Runtime以获得更好的性能
-  runtime: 'edge',
+  // 使用Node.js Runtime以支持AI SDK
+  runtime: 'nodejs',
   
   // 设置区域（可选）
   regions: ['iad1'], // 美国东部区域，靠近OpenAI服务器
