@@ -189,8 +189,4 @@ export default async function handler(req, res) {
   }
 }
 
-// Vercel Edge Runtime 配置（提高性能）
-export const config = {
-  runtime: 'edge',
-  regions: ['iad1'] // 美国东部
-};
+// 移除Edge Runtime配置，使用标准Node.js运行时以支持流式响应
