@@ -128,22 +128,12 @@ export default async function handler(req, res) {
       return;
     }
 
-    // 处理流式响应
-    const reader = response.body.getReader();
+    // 处理流式响应 - 使用 node-fetch 的流
     const decoder = new TextDecoder();
     let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      
-      if (done) {
-        console.log('✅ 流式响应完成');
-        res.write('data: [DONE]\n\n');
-        res.end();
-        break;
-      }
-
-      buffer += decoder.decode(value, { stream: true });
+    response.body.on('data', (chunk) => {
+      buffer += decoder.decode(chunk, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
 
@@ -169,11 +159,30 @@ export default async function handler(req, res) {
               })}\n\n`);
             }
           } catch (e) {
-            console.error('解析错误:', e, 'Data:', data);
+            // 忽略解析错误
           }
         }
       }
-    }
+    });
+
+    response.body.on('end', () => {
+      console.log('✅ 流式响应完成');
+      if (!res.finished) {
+        res.write('data: [DONE]\n\n');
+        res.end();
+      }
+    });
+
+    response.body.on('error', (error) => {
+      console.error('流式错误:', error);
+      if (!res.finished) {
+        res.write(`data: ${JSON.stringify({ 
+          type: 'error', 
+          error: error.message 
+        })}\n\n`);
+        res.end();
+      }
+    });
 
   } catch (error) {
     console.error('❌ 服务器错误:', error);
