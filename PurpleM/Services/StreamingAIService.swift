@@ -82,11 +82,14 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
     func sendStreamingMessage(
         _ message: String,
         context: [(role: String, content: String)] = [],
-        temperature: Double = 0.7
+        temperature: Double = 0.7,
+        useThinkingChain: Bool = true  // 默认使用思维链
     ) async throws -> AsyncThrowingStream<String, Error> {
         
-        // 准备请求 - 使用新的流式端点
-        let endpoint = "https://purple-m.vercel.app/api/chat-stream"
+        // 准备请求 - 根据是否使用思维链选择端点
+        let endpoint = useThinkingChain 
+            ? "https://purple-m.vercel.app/api/thinking-chain"
+            : "https://purple-m.vercel.app/api/chat-stream"
         guard let url = URL(string: endpoint) else {
             throw NSError(domain: "Invalid URL", code: -1)
         }

@@ -10,10 +10,9 @@ import SwiftUI
 @main
 struct PurpleMApp: App {
     @StateObject private var authManager = AuthManager.shared
-    @StateObject private var networkPermissionManager = NetworkPermissionManager.shared
     
     init() {
-        // 初始化网络权限管理器
+        // 初始化网络权限管理器，自动触发首次网络请求
         _ = NetworkPermissionManager.shared
     }
     
@@ -21,7 +20,6 @@ struct PurpleMApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(authManager)
-                .environmentObject(networkPermissionManager)
         }
     }
 }

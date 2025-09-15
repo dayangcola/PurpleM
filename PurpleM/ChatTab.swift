@@ -236,24 +236,33 @@ struct ChatTab: View {
             id: aiMessageId,
             content: "",
             isFromUser: false,
-            timestamp: Date()
+            timestamp: Date(),
+            thinkingContent: nil,
+            isThinkingVisible: true
         )
         messages.append(aiMessage)
         print("✅ 创建占位消息: \(aiMessageId)")
         
+        // 创建思维链解析器
+        let thinkingParser = ThinkingChainParser()
+        
         Task {
             do {
                 var fullResponse = ""
+                var fullThinking = ""
+                var fullAnswer = ""
                 
                 // 构建上下文
                 let context = buildStreamingContext()
                 print("📦 上下文大小: \(context.count) 条消息")
                 
-                // 获取流式响应
-                print("🌐 调用 StreamingAIService...")
+                // 获取流式响应 - 使用思维链端点
+                print("🌐 调用 StreamingAIService with thinking chain...")
                 let stream = try await streamingService.sendStreamingMessage(
                     messageText,
-                    context: context
+                    context: context,
+                    temperature: 0.8,
+                    useThinkingChain: true  // 启用思维链
                 )
                 
                 print("🔄 开始接收流式数据...")
@@ -262,14 +271,27 @@ struct ChatTab: View {
                     fullResponse += chunk
                     print("📨 收到数据块: \(chunk.prefix(20))...")
                     
+                    // 解析思维链内容
+                    let parsed = thinkingParser.parse(chunk)
+                    
+                    if let thinking = parsed.thinking {
+                        fullThinking = thinking
+                    }
+                    
+                    if let answer = parsed.answer {
+                        fullAnswer += answer
+                    }
+                    
                     // 更新UI上的消息
                     await MainActor.run {
                         if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
                             messages[index] = ChatMessage(
                                 id: aiMessageId,
-                                content: fullResponse,
+                                content: fullAnswer.isEmpty ? fullResponse : fullAnswer,
                                 isFromUser: false,
-                                timestamp: Date()
+                                timestamp: Date(),
+                                thinkingContent: fullThinking.isEmpty ? nil : fullThinking,
+                                isThinkingVisible: true
                             )
                             
                             // 自动滚动到底部
@@ -498,15 +520,19 @@ struct WelcomeMessageView: View {
 // MARK: - 聊天消息模型
 struct ChatMessage: Identifiable, Codable {
     let id: UUID
-    let content: String
+    var content: String
     let isFromUser: Bool
     let timestamp: Date
+    var thinkingContent: String? = nil  // 思考过程内容
+    var isThinkingVisible: Bool = true  // 是否显示思考过程
 }
 
 // MARK: - 聊天气泡
 struct ChatBubble: View {
     let message: ChatMessage
     @State private var isStreaming: Bool = false
+    @State private var thinkingOpacity: Double = 1.0
+    @State private var showThinking: Bool = true
     
     var body: some View {
         HStack {
@@ -514,7 +540,7 @@ struct ChatBubble: View {
                 Spacer()
             }
             
-            VStack(alignment: message.isFromUser ? .trailing : .leading, spacing: 4) {
+            VStack(alignment: message.isFromUser ? .trailing : .leading, spacing: 8) {
                 // 流式响应指示器
                 if !message.isFromUser && isStreaming {
                     HStack(spacing: 4) {
@@ -530,8 +556,40 @@ struct ChatBubble: View {
                     .padding(.horizontal, 4)
                 }
                 
+                // 思考过程显示（仅AI消息）
+                if !message.isFromUser,
+                   let thinkingContent = message.thinkingContent,
+                   !thinkingContent.isEmpty,
+                   showThinking {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "brain")
+                                .font(.caption2)
+                            Text("思考中...")
+                                .font(.caption2)
+                        }
+                        .foregroundColor(.purple.opacity(0.6))
+                        
+                        Text(thinkingContent)
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary.opacity(0.7))
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .fill(Color.purple.opacity(0.03))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 10)
+                                            .stroke(Color.purple.opacity(0.1), lineWidth: 0.5)
+                                    )
+                            )
+                    }
+                    .opacity(thinkingOpacity)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                
                 // 消息内容
-                Text(message.content)
+                if !message.content.isEmpty {
+                    Text(message.content)
                     .font(.system(size: 15))
                     .foregroundColor(message.isFromUser ? .white : .crystalWhite)
                     .padding(.horizontal, 16)
@@ -548,6 +606,7 @@ struct ChatBubble: View {
                         RoundedRectangle(cornerRadius: 18)
                             .stroke(isStreaming ? Color.starGold.opacity(0.3) : Color.moonSilver.opacity(0.2), lineWidth: 1)
                     )
+                }
                 
                 // 时间戳
                 Text(timeString(from: message.timestamp))
@@ -558,6 +617,20 @@ struct ChatBubble: View {
             
             if !message.isFromUser {
                 Spacer()
+            }
+        }
+        .onAppear {
+            // 如果有思考内容，3秒后淡出
+            if message.thinkingContent != nil && !message.isFromUser {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+                    withAnimation(.easeOut(duration: 1.0)) {
+                        thinkingOpacity = 0.0
+                    }
+                    
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        showThinking = false
+                    }
+                }
             }
         }
     }
