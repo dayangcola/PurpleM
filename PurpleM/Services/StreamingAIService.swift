@@ -86,10 +86,8 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         useThinkingChain: Bool = true  // 默认使用思维链
     ) async throws -> AsyncThrowingStream<String, Error> {
         
-        // 准备请求 - 根据是否使用思维链选择端点
-        let endpoint = useThinkingChain 
-            ? "https://purple-m.vercel.app/api/thinking-chain"
-            : "https://purple-m.vercel.app/api/chat-stream"
+        // 暂时都使用 chat-stream，通过修改消息来实现思维链
+        let endpoint = "https://purple-m.vercel.app/api/chat-stream"
         guard let url = URL(string: endpoint) else {
             throw NSError(domain: "Invalid URL", code: -1)
         }
@@ -101,6 +99,27 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         
         // 构建请求体
         var messages = context
+        
+        // 如果使用思维链，添加系统提示
+        if useThinkingChain && messages.first?.role != "system" {
+            let thinkingPrompt = """
+            请按照以下格式回答：
+            1. 首先输出你的思考过程，用 <thinking> 和 </thinking> 标签包裹
+            2. 然后输出最终答案，用 <answer> 和 </answer> 标签包裹
+            
+            示例：
+            <thinking>
+            让我分析一下这个问题...
+            从紫微斗数的角度看...
+            </thinking>
+            
+            <answer>
+            这是我的最终答案。
+            </answer>
+            """
+            messages.insert((role: "system", content: thinkingPrompt), at: 0)
+        }
+        
         messages.append((role: "user", content: message))
         
         let requestBody: [String: Any] = [
