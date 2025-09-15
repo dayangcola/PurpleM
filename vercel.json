@@ -1,8 +1,7 @@
 {
   "functions": {
     "api/chat-stream.js": {
-      "maxDuration": 60,
-      "runtime": "nodejs18.x"
+      "maxDuration": 60
     }
   },
   "headers": [
