@@ -150,7 +150,7 @@ struct ChatTab: View {
         .navigationViewStyle(StackNavigationViewStyle())
     }
     
-    // 发送消息（支持智能流式）
+    // 发送消息（使用流式响应）
     private func sendMessage() {
         let messageText = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !messageText.isEmpty else { return }
@@ -172,20 +172,9 @@ struct ChatTab: View {
         // 检测当前场景
         let currentScene = EnhancedAIService.shared.currentScene
         
-        // 智能判断是否使用流式响应
-        let shouldUseStreaming = StreamingDetector.shouldUseStreaming(
-            for: currentScene,
-            message: messageText,
-            settings: settingsManager
-        )
-        
-        if shouldUseStreaming {
-            // 使用流式响应
-            sendStreamingMessage(messageText, scene: currentScene)
-        } else {
-            // 使用普通响应
-            sendNormalMessage(messageText)
-        }
+        print("🚀 开始发送流式消息: \(messageText)")
+        // 使用流式响应
+        sendStreamingMessage(messageText, scene: currentScene)
     }
     
     // 普通消息发送（非流式）
@@ -237,6 +226,8 @@ struct ChatTab: View {
     
     // 流式消息发送
     private func sendStreamingMessage(_ messageText: String, scene: ConversationScene) {
+        print("📝 开始流式消息发送，场景: \(scene)")
+        
         // 创建AI消息占位符
         let aiMessageId = UUID()
         currentStreamingMessageId = aiMessageId
@@ -248,6 +239,7 @@ struct ChatTab: View {
             timestamp: Date()
         )
         messages.append(aiMessage)
+        print("✅ 创建占位消息: \(aiMessageId)")
         
         Task {
             do {
@@ -255,16 +247,20 @@ struct ChatTab: View {
                 
                 // 构建上下文
                 let context = buildStreamingContext()
+                print("📦 上下文大小: \(context.count) 条消息")
                 
                 // 获取流式响应
+                print("🌐 调用 StreamingAIService...")
                 let stream = try await streamingService.sendStreamingMessage(
                     messageText,
                     context: context
                 )
                 
+                print("🔄 开始接收流式数据...")
                 // 逐块更新消息
                 for try await chunk in stream {
                     fullResponse += chunk
+                    print("📨 收到数据块: \(chunk.prefix(20))...")
                     
                     // 更新UI上的消息
                     await MainActor.run {
@@ -305,8 +301,12 @@ struct ChatTab: View {
                 }
                 
             } catch {
+                print("❌ 流式响应错误: \(error)")
+                print("📝 错误详情: \(error.localizedDescription)")
+                
                 // 错误处理：降级到普通模式
                 await MainActor.run {
+                    print("⚠️ 降级到普通模式...")
                     // 移除占位消息
                     messages.removeAll { $0.id == aiMessageId }
                     currentStreamingMessageId = nil

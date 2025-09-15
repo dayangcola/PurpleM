@@ -85,8 +85,8 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         temperature: Double = 0.7
     ) async throws -> AsyncThrowingStream<String, Error> {
         
-        // 准备请求
-        let endpoint = "https://purplem.vercel.app/api/chat"
+        // 准备请求 - 使用新的流式端点
+        let endpoint = "https://purplem.vercel.app/api/chat-stream"
         guard let url = URL(string: endpoint) else {
             throw NSError(domain: "Invalid URL", code: -1)
         }
