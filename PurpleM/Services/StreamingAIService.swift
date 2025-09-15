@@ -236,19 +236,42 @@ extension StreamingAIService: URLSessionDataDelegate {
                     let jsonString = String(line.dropFirst(6))
                     
                     if jsonString == "[DONE]" {
+                        print("📌 收到流结束信号")
                         eventParser.onEvent?(.completed)
                         continue
                     }
                     
+                    // 尝试解析我们的简化格式
+                    if let jsonData = jsonString.data(using: .utf8),
+                       let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
+                        
+                        // 检查是否是我们的格式 {type: "content", content: "..."}
+                        if let type = json["type"] as? String,
+                           type == "content",
+                           let content = json["content"] as? String {
+                            print("📝 收到内容块: \(content)")
+                            eventParser.onEvent?(.message(content))
+                            continue
+                        }
+                        
+                        // 如果是连接成功消息
+                        if let type = json["type"] as? String,
+                           type == "connected" {
+                            print("✅ 流式连接已建立")
+                            continue
+                        }
+                    }
+                    
+                    // 尝试解析 OpenAI 格式（备用）
                     do {
                         if let jsonData = jsonString.data(using: .utf8),
                            let chunk = try? JSONDecoder().decode(StreamChunk.self, from: jsonData),
                            let content = chunk.choices?.first?.delta.content {
-                            
+                            print("📝 收到内容块 (OpenAI格式): \(content)")
                             eventParser.onEvent?(.message(content))
                         }
                     } catch {
-                        // 解析错误，继续处理下一行
+                        print("⚠️ 无法解析数据: \(jsonString)")
                         continue
                     }
                 }
