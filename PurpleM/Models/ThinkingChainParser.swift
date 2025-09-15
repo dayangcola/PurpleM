@@ -14,6 +14,16 @@ class ThinkingChainParser {
     private var inThinkingBlock = false
     private var inAnswerBlock = false
     
+    // 思考深度分析
+    private var thinkingDepth: ThinkingDepth = .basic
+    private var thinkingSections: [String: String] = [:]
+    
+    enum ThinkingDepth {
+        case basic      // 基础思考
+        case structured // 结构化思考（包含多个部分）
+        case deep       // 深度思考（包含完整的分析框架）
+    }
+    
     func parse(_ chunk: String) -> (thinking: String?, answer: String?) {
         var newThinking: String? = nil
         var newAnswer: String? = nil
@@ -97,5 +107,49 @@ class ThinkingChainParser {
         currentAnswer = ""
         inThinkingBlock = false
         inAnswerBlock = false
+        thinkingDepth = .basic
+        thinkingSections.removeAll()
+    }
+    
+    // 分析思考内容的深度和结构
+    func analyzeThinkingDepth(_ thinking: String) {
+        let sections = ["【问题理解】", "【多维分析】", "【逻辑推理】", "【潜在影响】", "【最佳方案】"]
+        var foundSections = 0
+        
+        for section in sections {
+            if thinking.contains(section) {
+                foundSections += 1
+                // 提取该部分的内容
+                if let range = thinking.range(of: section) {
+                    let startIndex = range.upperBound
+                    var endIndex = thinking.endIndex
+                    
+                    // 找到下一个section或结束
+                    for nextSection in sections {
+                        if nextSection != section,
+                           let nextRange = thinking.range(of: nextSection, range: startIndex..<thinking.endIndex) {
+                            endIndex = min(endIndex, nextRange.lowerBound)
+                        }
+                    }
+                    
+                    let content = String(thinking[startIndex..<endIndex]).trimmingCharacters(in: .whitespacesAndNewlines)
+                    thinkingSections[section] = content
+                }
+            }
+        }
+        
+        // 根据找到的部分数量判断思考深度
+        if foundSections >= 4 {
+            thinkingDepth = .deep
+        } else if foundSections >= 2 {
+            thinkingDepth = .structured
+        } else {
+            thinkingDepth = .basic
+        }
+    }
+    
+    // 获取思考深度信息
+    func getThinkingAnalysis() -> (depth: ThinkingDepth, sections: [String: String]) {
+        return (thinkingDepth, thinkingSections)
     }
 }

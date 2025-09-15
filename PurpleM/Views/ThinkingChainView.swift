@@ -87,6 +87,9 @@ struct StreamingThinkingChainView: View {
     @State private var answerText = ""
     @State private var showThinking = true
     @State private var thinkingOpacity = 1.0
+    @State private var thinkingDepth: ThinkingChainParser.ThinkingDepth = .basic
+    @State private var thinkingSections: [String: String] = [:]
+    @State private var expandedSections: Set<String> = []
     
     let streamContent: String
     private let parser = ThinkingChainParser()
@@ -97,21 +100,64 @@ struct StreamingThinkingChainView: View {
             if showThinking && !thinkingText.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
-                        Image(systemName: "brain")
+                        Image(systemName: depthIcon)
                             .font(.caption)
-                        Text("思考中...")
+                            .symbolEffect(.pulse, options: .repeating)
+                        Text(depthText)
                             .font(.caption)
+                        Spacer()
+                        if thinkingDepth == .deep {
+                            Label("\(thinkingSections.count)个维度", systemImage: "chart.xyaxis.line")
+                                .font(.caption2)
+                                .foregroundColor(.purple.opacity(0.5))
+                        }
                     }
-                    .foregroundColor(.purple.opacity(0.7))
+                    .foregroundColor(depthColor)
                     
-                    Text(thinkingText)
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary.opacity(0.8))
-                        .padding(10)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12)
-                                .fill(Color.purple.opacity(0.05))
-                        )
+                    // 根据深度显示不同的UI
+                    if thinkingDepth == .deep || thinkingDepth == .structured {
+                        // 结构化显示
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(thinkingSections.keys.sorted()), id: \.self) { section in
+                                DisclosureGroup(
+                                    isExpanded: Binding(
+                                        get: { expandedSections.contains(section) },
+                                        set: { isExpanded in
+                                            if isExpanded {
+                                                expandedSections.insert(section)
+                                            } else {
+                                                expandedSections.remove(section)
+                                            }
+                                        }
+                                    )
+                                ) {
+                                    Text(thinkingSections[section] ?? "")
+                                        .font(.system(size: 13))
+                                        .foregroundColor(.secondary.opacity(0.7))
+                                        .padding(8)
+                                } label: {
+                                    Text(section)
+                                        .font(.system(size: 14, weight: .medium))
+                                        .foregroundColor(.purple.opacity(0.8))
+                                }
+                                .padding(8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .fill(Color.purple.opacity(0.03))
+                                )
+                            }
+                        }
+                    } else {
+                        // 基础显示
+                        Text(thinkingText)
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary.opacity(0.8))
+                            .padding(10)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(Color.purple.opacity(0.05))
+                            )
+                    }
                 }
                 .opacity(thinkingOpacity)
             }
@@ -129,11 +175,61 @@ struct StreamingThinkingChainView: View {
         }
     }
     
+    // 计算属性
+    private var depthIcon: String {
+        switch thinkingDepth {
+        case .basic:
+            return "brain"
+        case .structured:
+            return "brain.head.profile"
+        case .deep:
+            return "sparkles.rectangle.stack"
+        }
+    }
+    
+    private var depthText: String {
+        switch thinkingDepth {
+        case .basic:
+            return "思考中..."
+        case .structured:
+            return "结构化分析中..."
+        case .deep:
+            return "深度思考中..."
+        }
+    }
+    
+    private var depthColor: Color {
+        switch thinkingDepth {
+        case .basic:
+            return .purple.opacity(0.7)
+        case .structured:
+            return .indigo.opacity(0.8)
+        case .deep:
+            return .blue.opacity(0.9)
+        }
+    }
+    
     private func parseStreamContent(_ content: String) {
         let result = parser.parse(content)
         
         if let thinking = result.thinking {
             thinkingText = thinking
+            // 分析思考深度
+            parser.analyzeThinkingDepth(thinking)
+            let analysis = parser.getThinkingAnalysis()
+            thinkingDepth = analysis.depth
+            thinkingSections = analysis.sections
+            
+            // 深度思考时自动展开前两个部分
+            if thinkingDepth == .deep && expandedSections.isEmpty {
+                let sortedKeys = Array(thinkingSections.keys.sorted())
+                if sortedKeys.count > 0 {
+                    expandedSections.insert(sortedKeys[0])
+                }
+                if sortedKeys.count > 1 {
+                    expandedSections.insert(sortedKeys[1])
+                }
+            }
         }
         
         if let answer = result.answer {
