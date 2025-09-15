@@ -1,5 +1,8 @@
 // Vercel Serverless Function - 流式 AI 对话
+// 使用 Vercel AI Gateway 进行代理
 // 路径: /api/chat-stream
+
+import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
   // 处理 CORS
@@ -46,25 +49,25 @@ export default async function handler(req, res) {
 
     const allMessages = [systemMessage, ...messages];
 
-    // 获取 OpenAI API Key
-    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    // 获取 Vercel AI Gateway Key
+    const VERCEL_AI_GATEWAY_KEY = process.env.VERCEL_AI_GATEWAY_KEY;
     
-    if (!OPENAI_API_KEY) {
-      console.error('❌ 缺少 OPENAI_API_KEY');
-      res.status(500).json({ error: 'OpenAI API key not configured' });
+    if (!VERCEL_AI_GATEWAY_KEY) {
+      console.error('❌ 缺少 VERCEL_AI_GATEWAY_KEY');
+      res.status(500).json({ error: 'Vercel AI Gateway key not configured' });
       return;
     }
 
     // 如果不需要流式，返回普通响应
     if (!stream) {
-      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      const response = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENAI_API_KEY}`
+          'Authorization': `Bearer ${VERCEL_AI_GATEWAY_KEY}`
         },
         body: JSON.stringify({
-          model,
+          model: `openai/${model}`,  // AI Gateway 需要指定提供商
           messages: allMessages,
           temperature,
           max_tokens: 1000
@@ -98,15 +101,15 @@ export default async function handler(req, res) {
     // 发送初始连接消息
     res.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
 
-    // 调用 OpenAI 流式 API
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+    // 调用 Vercel AI Gateway 流式 API
+    const response = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${OPENAI_API_KEY}`
+        'Authorization': `Bearer ${VERCEL_AI_GATEWAY_KEY}`
       },
       body: JSON.stringify({
-        model,
+        model: `openai/${model}`,  // AI Gateway 需要指定提供商
         messages: allMessages,
         temperature,
         max_tokens: 1000,
@@ -116,7 +119,7 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ OpenAI 流式 API 错误:', errorText);
+      console.error('❌ Vercel AI Gateway 流式 API 错误:', errorText);
       res.write(`data: ${JSON.stringify({ 
         type: 'error', 
         error: 'Failed to get streaming response' 
