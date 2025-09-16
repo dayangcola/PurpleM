@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     const { 
       messages = [], 
       userMessage = '',
-      model = 'gpt-4o-mini',
+      model = 'gpt-3.5-turbo',  // 默认使用 GPT-3.5-turbo
       temperature = 0.8,
       stream = true,
       userInfo = null,

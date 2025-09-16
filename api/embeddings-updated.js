@@ -1,10 +1,10 @@
 // api/embeddings-updated.js
-// Vercel Edge Function using Vercel AI SDK for OpenAI Embeddings
+// Vercel Edge Function using Vercel AI Gateway for Embeddings
 
-import { embed } from 'ai';
-import { openai } from '@ai-sdk/openai';
+import { generateEmbedding } from '../lib/ai-gateway-client.js';
 
 export const runtime = 'nodejs';
+export const maxDuration = 10;
 
 export default async function handler(req) {
   // 只允许POST请求
@@ -34,11 +34,8 @@ export default async function handler(req) {
       });
     }
 
-    // 使用 Vercel AI SDK 生成嵌入向量
-    const { embedding } = await embed({
-      model: openai.embedding(model),
-      value: input,
-    });
+    // 使用 Vercel AI Gateway 生成嵌入向量
+    const embedding = await generateEmbedding(input, model);
 
     // 返回嵌入向量
     return new Response(JSON.stringify({

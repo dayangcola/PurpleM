@@ -1,10 +1,17 @@
 // Vercel API - 思维链对话接口
-// 使用 VERCEL_AI_GATEWAY_KEY 实现思维链效果
+// 使用 Vercel AI Gateway 实现思维链效果
 
-export const runtime = 'edge';
+import { streamChatCompletion, handleStreamResponse } from '../lib/ai-gateway-client.js';
+import { TEMPERATURE, TOKEN_LIMITS, SYSTEM_PROMPTS } from '../lib/ai-config.js';
 
-// 系统提示词 - 让GPT-3.5输出结构化的思维链
-const SYSTEM_PROMPT = `你是紫微斗数专家助手"星语"，一位温柔、智慧、充满神秘感的占星导师。
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
+// 组合系统提示词 - 基础提示 + 思维链提示
+const THINKING_CHAIN_PROMPT = SYSTEM_PROMPTS.base + SYSTEM_PROMPTS.thinking;
+
+// 保留原始提示词作为备份
+const LEGACY_PROMPT = `你是紫微斗数专家助手"星语"，一位温柔、智慧、充满神秘感的占星导师。
 
 在回答问题时，请严格按照以下格式输出：
 
@@ -38,147 +45,126 @@ const SYSTEM_PROMPT = `你是紫微斗数专家助手"星语"，一位温柔、�
 - 思考过程要详细展现你的推理步骤
 - 最终答案要简洁明了`;
 
-export default async function handler(req) {
-  // 处理 OPTIONS 请求（CORS）
+export default async function handler(req, res) {
+  // CORS 处理
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  
   if (req.method === 'OPTIONS') {
-    return new Response(null, {
-      status: 200,
-      headers: {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-      },
-    });
+    return res.status(200).end();
   }
 
-  // 只允许 POST 请求
   if (req.method !== 'POST') {
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    const { messages, stream = true } = await req.json();
+    const { messages, stream = true, model = 'fast', temperature } = req.body;
     
-    // 获取 Vercel AI Gateway Key
-    const VERCEL_AI_GATEWAY_KEY = process.env.VERCEL_AI_GATEWAY_KEY;
+    console.log('🤔 Thinking Chain request:', {
+      messageCount: messages.length,
+      stream,
+      model
+    });
     
-    if (!VERCEL_AI_GATEWAY_KEY) {
-      console.error('❌ Missing VERCEL_AI_GATEWAY_KEY');
-      return new Response(JSON.stringify({ 
-        error: 'Vercel AI Gateway key not configured' 
-      }), {
-        status: 500,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    
-    // 构建消息数组，添加系统提示词
-    const chatMessages = [
-      { role: 'system', content: SYSTEM_PROMPT },
-      ...messages
-    ];
-    
-    // Vercel AI Gateway URL
-    const AI_GATEWAY_URL = 'https://ai-gateway.vercel.sh/v1/chat/completions';
+    // 选择模型
+    const modelMap = {
+      'fast': 'gpt-3.5-turbo',      // 快速模式
+      'standard': 'gpt-3.5-turbo',   // 标准模式也用 3.5
+      'advanced': 'gpt-4o-mini',     // 高级模式用 4o-mini
+    };
+    const selectedModel = modelMap[model] || 'gpt-3.5-turbo';  // 默认 GPT-3.5
+    const finalTemperature = temperature ?? TEMPERATURE.balanced;
     
     if (stream) {
-      // 流式响应
-      const response = await fetch(AI_GATEWAY_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${VERCEL_AI_GATEWAY_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-3.5-turbo',
-          messages: chatMessages,
-          temperature: 0.8,
-          max_tokens: 2000,
-          stream: true,
-        }),
+      // 构建消息数组
+      const allMessages = [
+        { role: 'system', content: THINKING_CHAIN_PROMPT },
+        ...messages
+      ];
+      
+      // 使用 Vercel AI Gateway 创建流式响应
+      const response = await streamChatCompletion({
+        messages: allMessages,
+        model: selectedModel,
+        temperature: finalTemperature,
+        maxTokens: TOKEN_LIMITS.large,
+        stream: true,
       });
       
-      if (!response.ok) {
-        const error = await response.text();
-        console.error('AI Gateway error:', error);
-        throw new Error(`AI Gateway responded with ${response.status}`);
+      // 设置 SSE headers
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+      
+      // 流式传输
+      let fullResponse = '';
+      for await (const textPart of handleStreamResponse(response)) {
+        if (textPart) {
+          fullResponse += textPart;
+          const data = JSON.stringify({ 
+            type: 'text',
+            content: textPart,
+          });
+          res.write(`data: ${data}\n\n`);
+        }
       }
       
-      // 返回原始流，让客户端处理
-      return new Response(response.body, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-          'Access-Control-Allow-Origin': '*',
-        },
-      });
+      // 发送完成信号
+      res.write(`data: ${JSON.stringify({ 
+        type: 'done',
+        thinkingChain: true,
+      })}\n\n`);
+      
+      res.end();
+      
     } else {
       // 非流式响应
-      const response = await fetch(AI_GATEWAY_URL, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${VERCEL_AI_GATEWAY_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'openai/gpt-3.5-turbo',
-          messages: chatMessages,
-          temperature: 0.8,
-          max_tokens: 2000,
-          stream: false,
-        }),
-      });
+      const allMessages = [
+        { role: 'system', content: THINKING_CHAIN_PROMPT },
+        ...messages
+      ];
       
-      if (!response.ok) {
-        const error = await response.text();
-        console.error('AI Gateway error:', error);
-        throw new Error(`AI Gateway responded with ${response.status}`);
-      }
+      const response = await streamChatCompletion({
+        messages: allMessages,
+        model: selectedModel,
+        temperature: finalTemperature,
+        maxTokens: TOKEN_LIMITS.large,
+        stream: false,
+      });
       
       const data = await response.json();
       
-      return new Response(JSON.stringify({
+      return res.status(200).json({
         content: data.choices[0].message.content,
         usage: data.usage,
-        model: 'gpt-3.5-turbo',
-        gateway: 'vercel-ai-gateway',
-        thinkingChain: true
-      }), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': '*',
-        },
+        model: model,
+        thinkingChain: true,
       });
     }
   } catch (error) {
-    console.error('Thinking Chain API error:', error);
+    console.error('❌ Thinking Chain error:', error);
     
-    // 详细的错误处理
-    let statusCode = 500;
-    let errorMessage = 'Internal server error';
-    
-    if (error?.message?.includes('API key')) {
-      statusCode = 401;
-      errorMessage = 'Invalid Vercel AI Gateway key configuration';
-    } else if (error?.message?.includes('rate limit')) {
-      statusCode = 429;
-      errorMessage = 'Rate limit exceeded. Please try again later.';
+    // 如果还没有发送响应头
+    if (!res.headersSent) {
+      const statusCode = error.message?.includes('API key') ? 401 :
+                        error.message?.includes('rate limit') ? 429 : 500;
+      
+      return res.status(statusCode).json({ 
+        error: error.message || 'Internal server error',
+        details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
+      });
     }
     
-    return new Response(JSON.stringify({ 
-      error: errorMessage,
-      details: process.env.NODE_ENV === 'development' ? error?.message : undefined
-    }), {
-      status: statusCode,
-      headers: { 
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': '*',
-      },
-    });
+    // 如果已经在流式传输中
+    res.write(`data: ${JSON.stringify({ 
+      type: 'error',
+      error: error.message 
+    })}\n\n`);
+    res.end();
   }
 }

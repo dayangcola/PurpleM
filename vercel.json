@@ -2,6 +2,19 @@
   "functions": {
     "api/chat-stream.js": {
       "maxDuration": 60
+    },
+    "api/chat-stream-v2.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    },
+    "api/chat-stream-enhanced.js": {
+      "maxDuration": 60
+    },
+    "api/thinking-chain.js": {
+      "maxDuration": 60
+    },
+    "api/embeddings-updated.js": {
+      "maxDuration": 10
     }
   },
   "headers": [

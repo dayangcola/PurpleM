@@ -88,11 +88,12 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         scene: String? = nil,
         emotion: String? = nil,
         chartContext: String? = nil,
-        systemPrompt: String? = nil
+        systemPrompt: String? = nil,
+        model: String = "standard"  // 模型选择: fast, standard, advanced
     ) async throws -> AsyncThrowingStream<String, Error> {
         
-        // 使用增强版流式端点
-        let endpoint = "https://purple-m.vercel.app/api/chat-stream-enhanced"
+        // 使用新的v2端点 - 完全基于Vercel AI SDK
+        let endpoint = "https://purple-m.vercel.app/api/chat-stream-v2"
         guard let url = URL(string: endpoint) else {
             throw NSError(domain: "Invalid URL", code: -1)
         }
@@ -109,10 +110,10 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         var requestBody: [String: Any] = [
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
             "userMessage": message,
-            "model": "gpt-4o-mini",
+            "model": model,  // 使用可配置的模型
             "temperature": temperature,
-            "stream": true,  // 启用流式响应
-            "enableKnowledge": true  // 启用知识库搜索
+            "enableKnowledge": true,  // 启用知识库搜索
+            "enableThinking": useThinkingChain  // 使用思维链
         ]
         
         // 添加用户信息
