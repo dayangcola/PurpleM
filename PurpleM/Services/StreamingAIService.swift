@@ -83,11 +83,16 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         _ message: String,
         context: [(role: String, content: String)] = [],
         temperature: Double = 0.7,
-        useThinkingChain: Bool = true  // 默认使用思维链
+        useThinkingChain: Bool = true,  // 默认使用思维链
+        userInfo: UserInfo? = nil,
+        scene: String? = nil,
+        emotion: String? = nil,
+        chartContext: String? = nil,
+        systemPrompt: String? = nil
     ) async throws -> AsyncThrowingStream<String, Error> {
         
-        // 暂时都使用 chat-stream，通过修改消息来实现思维链
-        let endpoint = "https://purple-m.vercel.app/api/chat-stream"
+        // 使用增强版流式端点
+        let endpoint = "https://purple-m.vercel.app/api/chat-stream-enhanced"
         guard let url = URL(string: endpoint) else {
             throw NSError(domain: "Invalid URL", code: -1)
         }
@@ -100,56 +105,47 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         // 构建请求体
         var messages = context
         
-        // 如果使用思维链，添加系统提示
-        if useThinkingChain && messages.first?.role != "system" {
-            let thinkingPrompt = """
-            你是一个深度思考的智能助手。请按照以下格式进行深入分析和回答：
-            
-            使用 <thinking> 标签包裹你的思考过程，包含以下层次：
-            【问题理解】首先准确理解用户的真实需求和问题核心
-            【多维分析】从不同角度（如紫微斗数、心理学、实用性等）分析问题
-            【逻辑推理】通过严密的逻辑推导得出结论
-            【潜在影响】考虑各种可能的影响和结果
-            【最佳方案】综合考虑后确定最优解决方案
-            
-            使用 <answer> 标签包裹你的最终答案，要求：
-            - 结构清晰，层次分明
-            - 观点明确，论据充分
-            - 语言优美，易于理解
-            - 提供可操作的建议
-            
-            示例格式：
-            <thinking>
-            【问题理解】用户询问的核心是...
-            【多维分析】
-            - 从紫微斗数角度：...
-            - 从心理层面：...
-            - 从实际操作：...
-            【逻辑推理】基于以上分析，我认为...
-            【潜在影响】这可能会带来...
-            【最佳方案】综合考虑，建议...
-            </thinking>
-            
-            <answer>
-            根据深入分析，我的建议是...
-            [清晰的结构化回答]
-            </answer>
-            """
-            messages.insert((role: "system", content: thinkingPrompt), at: 0)
-        }
-        
-        messages.append((role: "user", content: message))
-        
-        let requestBody: [String: Any] = [
+        // 构建完整的请求体，包含所有上下文信息
+        var requestBody: [String: Any] = [
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
+            "userMessage": message,
             "model": "gpt-4o-mini",
             "temperature": temperature,
             "stream": true,  // 启用流式响应
-            "userInfo": [
-                "name": "星语用户",
-                "userId": AuthManager.shared.currentUser?.id ?? "anonymous"
-            ]
+            "enableKnowledge": true  // 启用知识库搜索
         ]
+        
+        // 添加用户信息
+        if let userInfo = userInfo {
+            var userDict: [String: Any] = [:]
+            userDict["name"] = userInfo.name
+            userDict["gender"] = userInfo.gender
+            if let birthDate = userInfo.birthDate {
+                userDict["birthDate"] = ISO8601DateFormatter().string(from: birthDate)
+            }
+            if let location = userInfo.birthLocation {
+                userDict["birthLocation"] = location
+            }
+            requestBody["userInfo"] = userDict
+        }
+        
+        // 添加场景和情绪
+        if let scene = scene {
+            requestBody["scene"] = scene
+        }
+        if let emotion = emotion {
+            requestBody["emotion"] = emotion
+        }
+        
+        // 添加命盘上下文
+        if let chartContext = chartContext {
+            requestBody["chartContext"] = chartContext
+        }
+        
+        // 添加系统提示词
+        if let systemPrompt = systemPrompt {
+            requestBody["systemPrompt"] = systemPrompt
+        }
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         

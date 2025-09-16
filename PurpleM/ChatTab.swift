@@ -24,15 +24,10 @@ struct ChatTab: View {
     @State private var showQuotaAlert = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var cancellables = Set<AnyCancellable>()
-    @State private var knowledgeReferences: [SearchResult] = []  // 存储知识库搜索结果
+    @State private var knowledgeReferences: [String] = []  // 存储知识库引用（从服务端返回）
     
     // 使用增强版AI服务（集成知识库）
     private var aiService = EnhancedAIService.shared
-    
-    // 知识库检索器（用于流式模式）
-    private let knowledgeRetriever = KnowledgeRetriever(
-        openAIKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? ""
-    )
     
     var body: some View {
         NavigationView {
@@ -230,7 +225,7 @@ struct ChatTab: View {
         }
     }
     
-    // 流式消息发送（集成知识库搜索）
+    // 流式消息发送（服务端集成知识库）
     private func sendStreamingMessage(_ messageText: String, scene: ConversationScene) {
         print("📝 开始流式消息发送，场景: \(scene)")
         
@@ -261,43 +256,30 @@ struct ChatTab: View {
                 var fullThinking = ""
                 var fullAnswer = ""
                 
-                // 🔍 第一步：搜索知识库（新增）
-                print("🔍 开始知识库搜索: \(messageText)")
-                await knowledgeRetriever.hybridSearch(messageText, limit: 3)
-                let knowledgeResults = knowledgeRetriever.searchResults
-                self.knowledgeReferences = knowledgeResults
-                print("📚 找到 \(knowledgeResults.count) 条相关知识")
+                // 构建上下文
+                let context = buildStreamingContext()
+                print("📦 上下文大小: \(context.count) 条消息")
                 
-                // 构建增强的上下文
-                var context = buildStreamingContext()
+                // 🎯 获取用户信息和命盘上下文
+                let userInfo = userDataManager.currentChart?.userInfo
+                let chartContext = extractChartContext(for: messageText)
+                let detectedEmotion = detectEmotion(from: messageText)
                 
-                // 🎯 第二步：将知识库结果加入上下文（新增）
-                if !knowledgeResults.isEmpty {
-                    var knowledgeContext = "【知识库参考】\n"
-                    knowledgeContext += "以下是从紫微斗数专业知识库中检索到的相关内容：\n\n"
-                    
-                    for (index, result) in knowledgeResults.prefix(3).enumerated() {
-                        knowledgeContext += "参考\(index + 1) - \(result.citation)\n"
-                        knowledgeContext += "相关度：\(Int(result.score * 100))%\n"
-                        knowledgeContext += "内容：\(String(result.content.prefix(300)))...\n\n"
-                    }
-                    
-                    knowledgeContext += "请基于以上知识库内容，结合用户问题提供准确的回答。\n"
-                    
-                    // 将知识库内容作为系统消息插入到上下文开头
-                    context.insert((role: "system", content: knowledgeContext), at: 0)
-                    print("✅ 知识库内容已加入上下文")
-                }
+                // 🔗 构建完整的系统提示词
+                let systemPrompt = AIPersonality.systemPrompt
                 
-                print("📦 增强后上下文大小: \(context.count) 条消息")
-                
-                // 获取流式响应 - 使用思维链端点
-                print("🌐 调用 StreamingAIService with thinking chain...")
+                // 🌐 调用增强版流式服务（服务端会进行知识库搜索）
+                print("🌐 调用增强版 StreamingAIService...")
                 let stream = try await streamingService.sendStreamingMessage(
                     messageText,
                     context: context,
                     temperature: 0.8,
-                    useThinkingChain: true  // 启用思维链
+                    useThinkingChain: true,  // 启用思维链
+                    userInfo: userInfo,
+                    scene: scene.rawValue,
+                    emotion: detectedEmotion.rawValue,
+                    chartContext: chartContext,
+                    systemPrompt: systemPrompt
                 )
                 
                 print("🔄 开始接收流式数据...")
@@ -341,14 +323,8 @@ struct ChatTab: View {
                     isTyping = false
                     currentStreamingMessageId = nil
                     
-                    // 🔗 第四步：添加知识库引用到最终回复（新增）
+                    // 🔗 服务端会返回知识库引用，暂时不需要客户端处理
                     var finalResponseWithRefs = fullAnswer.isEmpty ? fullResponse : fullAnswer
-                    if !knowledgeReferences.isEmpty {
-                        finalResponseWithRefs += "\n\n---\n📚 **参考资料**\n"
-                        for (index, ref) in knowledgeReferences.prefix(3).enumerated() {
-                            finalResponseWithRefs += "[\(index + 1)] \(ref.citation)\n"
-                        }
-                    }
                     
                     // 更新最终消息包含引用
                     if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
@@ -420,6 +396,57 @@ struct ChatTab: View {
     private func sendQuickQuestion(_ question: String) {
         inputText = question
         sendMessage()
+    }
+    
+    // MARK: - 辅助方法
+    
+    // 提取命盘上下文
+    private func extractChartContext(for message: String) -> String? {
+        guard let chart = userDataManager.currentChart else { return nil }
+        
+        var context = "【命盘关键信息】\n"
+        
+        // 提取相关宫位
+        let palaceKeywords = [
+            "事业": "官禄宫",
+            "工作": "官禄宫",
+            "感情": "夫妻宫",
+            "爱情": "夫妻宫",
+            "财运": "财帛宫",
+            "金钱": "财帛宫",
+            "健康": "疾厄宫",
+            "家庭": "田宅宫"
+        ]
+        
+        for (keyword, palaceName) in palaceKeywords {
+            if message.contains(keyword) {
+                context += "相关宫位：\(palaceName)\n"
+            }
+        }
+        
+        return context.isEmpty ? nil : context
+    }
+    
+    // 检测用户情绪
+    private func detectEmotion(from message: String) -> UserEmotion {
+        // 简单的关键词检测
+        let message = message.lowercased()
+        
+        if message.contains("难过") || message.contains("悲伤") || message.contains("失落") {
+            return .sad
+        } else if message.contains("焦虑") || message.contains("担心") || message.contains("紧张") {
+            return .anxious
+        } else if message.contains("困惑") || message.contains("不明白") || message.contains("为什么") {
+            return .confused
+        } else if message.contains("开心") || message.contains("高兴") || message.contains("太好了") {
+            return .excited
+        } else if message.contains("生气") || message.contains("愤怒") || message.contains("讨厌") {
+            return .angry
+        } else if message.contains("想知道") || message.contains("请问") || message.contains("是什么") {
+            return .curious
+        }
+        
+        return .neutral
     }
     
     // 清空聊天
