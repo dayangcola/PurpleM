@@ -71,6 +71,12 @@ git push
   - 不要使用其他 AI 服务接口
 
 ## 最近的改动
+- 2025-09-16: 重大修复 - 完整集成知识库到流式响应模式
+  - 将知识库搜索从客户端移到服务端（解决iOS无法访问API Key问题）
+  - 创建增强版API端点 chat-stream-enhanced.js
+  - 统一使用 Vercel AI Gateway
+  - 传递完整用户上下文（用户信息、场景、情绪、命盘）
+  - 修复系统提示词被覆盖的问题
 - 2025-09-15: 实现了思维链深度思考功能
   - 增强了 StreamingAIService 的系统提示，支持结构化深度思考
   - 改进了 ThinkingChainParser，能识别和分析思考深度
