@@ -92,8 +92,8 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         model: String = "standard"  // 模型选择: fast, standard, advanced
     ) async throws -> AsyncThrowingStream<String, Error> {
         
-        // 使用新的v2端点 - 完全基于Vercel AI SDK
-        let endpoint = "https://purple-m.vercel.app/api/chat-stream-v2"
+        // 使用增强版端点 - 包含知识库支持
+        let endpoint = "https://purple-m.vercel.app/api/chat-stream-enhanced"
         guard let url = URL(string: endpoint) else {
             throw NSError(domain: "Invalid URL", code: -1)
         }
@@ -121,9 +121,7 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
             var userDict: [String: Any] = [:]
             userDict["name"] = userInfo.name
             userDict["gender"] = userInfo.gender
-            if let birthDate = userInfo.birthDate {
-                userDict["birthDate"] = ISO8601DateFormatter().string(from: birthDate)
-            }
+            userDict["birthDate"] = ISO8601DateFormatter().string(from: userInfo.birthDate)
             if let location = userInfo.birthLocation {
                 userDict["birthLocation"] = location
             }
@@ -261,7 +259,12 @@ extension StreamingAIService: URLSessionDataDelegate {
     nonisolated func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         Task { @MainActor in
             // 处理接收到的流数据
-            guard let string = String(data: data, encoding: .utf8) else { return }
+            guard let string = String(data: data, encoding: .utf8) else {
+                print("❌ 无法解码数据为UTF-8字符串")
+                return
+            }
+            
+            print("📥 收到原始数据: \(string.prefix(200))...") // 只打印前200个字符
             
             responseBuffer += string
             
@@ -282,9 +285,9 @@ extension StreamingAIService: URLSessionDataDelegate {
                     if let jsonData = jsonString.data(using: .utf8),
                        let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
                         
-                        // 检查是否是我们的格式 {type: "content", content: "..."}
+                        // 检查是否是我们的格式 {type: "text", content: "..."}
                         if let type = json["type"] as? String,
-                           type == "content",
+                           (type == "text" || type == "content"),  // 兼容两种格式
                            let content = json["content"] as? String {
                             print("📝 收到内容块: \(content)")
                             eventParser.onEvent?(.message(content))
@@ -295,6 +298,23 @@ extension StreamingAIService: URLSessionDataDelegate {
                         if let type = json["type"] as? String,
                            type == "connected" {
                             print("✅ 流式连接已建立")
+                            continue
+                        }
+                        
+                        // 如果是完成信号
+                        if let type = json["type"] as? String,
+                           type == "done" {
+                            print("✅ 流式响应已完成")
+                            eventParser.onEvent?(.completed)
+                            continue
+                        }
+                        
+                        // 如果是错误信号
+                        if let type = json["type"] as? String,
+                           type == "error",
+                           let errorMessage = json["error"] as? String {
+                            print("❌ 服务端错误: \(errorMessage)")
+                            eventParser.onEvent?(.error(NSError(domain: "StreamingAI", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])))
                             continue
                         }
                     }
@@ -324,13 +344,29 @@ extension StreamingAIService: URLSessionDataDelegate {
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         Task { @MainActor in
             if let error = error {
+                print("❌ URLSession错误: \(error.localizedDescription)")
                 eventParser.onEvent?(.error(error))
             } else {
+                print("✅ URLSession任务完成")
                 eventParser.onEvent?(.completed)
             }
             
             isStreaming = false
         }
+    }
+    
+    nonisolated func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        Task { @MainActor in
+            if let httpResponse = response as? HTTPURLResponse {
+                print("📡 HTTP响应状态码: \(httpResponse.statusCode)")
+                print("📡 Content-Type: \(httpResponse.allHeaderFields["Content-Type"] ?? "unknown")")
+                
+                if httpResponse.statusCode != 200 {
+                    print("❌ 非200状态码，可能有错误")
+                }
+            }
+        }
+        completionHandler(.allow)
     }
 }
 

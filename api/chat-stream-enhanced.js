@@ -6,6 +6,15 @@
 import fetch from 'node-fetch';
 import { createClient } from '@supabase/supabase-js';
 
+// Vercel 配置 - 禁用自动 body 解析
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '1mb',
+    },
+  },
+};
+
 // Supabase 配置
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
