@@ -24,9 +24,15 @@ struct ChatTab: View {
     @State private var showQuotaAlert = false
     @State private var scrollProxy: ScrollViewProxy?
     @State private var cancellables = Set<AnyCancellable>()
+    @State private var knowledgeReferences: [SearchResult] = []  // 存储知识库搜索结果
     
     // 使用增强版AI服务（集成知识库）
     private var aiService = EnhancedAIService.shared
+    
+    // 知识库检索器（用于流式模式）
+    private let knowledgeRetriever = KnowledgeRetriever(
+        openAIKey: ProcessInfo.processInfo.environment["OPENAI_API_KEY"] ?? ""
+    )
     
     var body: some View {
         NavigationView {
@@ -224,9 +230,12 @@ struct ChatTab: View {
         }
     }
     
-    // 流式消息发送
+    // 流式消息发送（集成知识库搜索）
     private func sendStreamingMessage(_ messageText: String, scene: ConversationScene) {
         print("📝 开始流式消息发送，场景: \(scene)")
+        
+        // 清空上一次的知识库引用
+        knowledgeReferences = []
         
         // 创建AI消息占位符
         let aiMessageId = UUID()
@@ -252,9 +261,35 @@ struct ChatTab: View {
                 var fullThinking = ""
                 var fullAnswer = ""
                 
-                // 构建上下文
-                let context = buildStreamingContext()
-                print("📦 上下文大小: \(context.count) 条消息")
+                // 🔍 第一步：搜索知识库（新增）
+                print("🔍 开始知识库搜索: \(messageText)")
+                await knowledgeRetriever.hybridSearch(messageText, limit: 3)
+                let knowledgeResults = knowledgeRetriever.searchResults
+                self.knowledgeReferences = knowledgeResults
+                print("📚 找到 \(knowledgeResults.count) 条相关知识")
+                
+                // 构建增强的上下文
+                var context = buildStreamingContext()
+                
+                // 🎯 第二步：将知识库结果加入上下文（新增）
+                if !knowledgeResults.isEmpty {
+                    var knowledgeContext = "【知识库参考】\n"
+                    knowledgeContext += "以下是从紫微斗数专业知识库中检索到的相关内容：\n\n"
+                    
+                    for (index, result) in knowledgeResults.prefix(3).enumerated() {
+                        knowledgeContext += "参考\(index + 1) - \(result.citation)\n"
+                        knowledgeContext += "相关度：\(Int(result.score * 100))%\n"
+                        knowledgeContext += "内容：\(String(result.content.prefix(300)))...\n\n"
+                    }
+                    
+                    knowledgeContext += "请基于以上知识库内容，结合用户问题提供准确的回答。\n"
+                    
+                    // 将知识库内容作为系统消息插入到上下文开头
+                    context.insert((role: "system", content: knowledgeContext), at: 0)
+                    print("✅ 知识库内容已加入上下文")
+                }
+                
+                print("📦 增强后上下文大小: \(context.count) 条消息")
                 
                 // 获取流式响应 - 使用思维链端点
                 print("🌐 调用 StreamingAIService with thinking chain...")
@@ -305,6 +340,28 @@ struct ChatTab: View {
                 await MainActor.run {
                     isTyping = false
                     currentStreamingMessageId = nil
+                    
+                    // 🔗 第四步：添加知识库引用到最终回复（新增）
+                    var finalResponseWithRefs = fullAnswer.isEmpty ? fullResponse : fullAnswer
+                    if !knowledgeReferences.isEmpty {
+                        finalResponseWithRefs += "\n\n---\n📚 **参考资料**\n"
+                        for (index, ref) in knowledgeReferences.prefix(3).enumerated() {
+                            finalResponseWithRefs += "[\(index + 1)] \(ref.citation)\n"
+                        }
+                    }
+                    
+                    // 更新最终消息包含引用
+                    if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
+                        messages[index] = ChatMessage(
+                            id: aiMessageId,
+                            content: finalResponseWithRefs,
+                            isFromUser: false,
+                            timestamp: Date(),
+                            thinkingContent: fullThinking.isEmpty ? nil : fullThinking,
+                            isThinkingVisible: true
+                        )
+                    }
+                    
                     saveChatHistory()
                     
                     // 生成智能推荐
