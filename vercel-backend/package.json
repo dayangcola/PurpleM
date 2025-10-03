@@ -1,0 +1,16 @@
+{
+  "name": "purple-backend",
+  "version": "1.0.0",
+  "description": "Purple App Backend - Vercel Serverless Functions",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "@vercel/kv": "^1.0.0"
+  },
+  "devDependencies": {
+    "vercel": "^32.0.0"
+  }
+}

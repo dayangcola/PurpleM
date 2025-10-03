@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>紫微斗数计算器</title>
+    <script src="iztro.min.js"></script>
+    <script>
+        // 修复 forEach 兼容性问题
+        if (!NodeList.prototype.forEach) {
+            NodeList.prototype.forEach = Array.prototype.forEach;
+        }
+        
+        // 全局错误捕获
+        window.onerror = function(msg, url, line, col, error) {
+            console.log('Global error:', msg, error);
+            return true;
+        };
+        
+        window.onload = function() {
+            console.log('开始初始化...');
+            
+            // 创建一个安全的计算函数
+            window.calculateAstrolabe = function(inputJson) {
+                console.log('收到输入:', inputJson);
+                
+                try {
+                    const input = JSON.parse(inputJson);
+                    
+                    // 直接创建一个新的 astro 实例，避免全局配置
+                    let result = null;
+                    
+                    // 方法1：尝试最简单的调用
+                    try {
+                        // 初始化默认语言，避免 forEach 错误
+                        if (window.iztro && window.iztro.setLanguage) {
+                            try {
+                                // 尝试设置语言，如果失败就忽略
+                                window.iztro.setLanguage('zh-CN');
+                            } catch(e) {
+                                console.log('设置语言失败，使用默认');
+                            }
+                        }
+                        
+                        // 确保 astro 对象存在
+                        if (!window.iztro || !window.iztro.astro || !window.iztro.astro.bySolar) {
+                            throw new Error('iztro 库未正确加载');
+                        }
+                        
+                        // 构造日期字符串
+                        const dateStr = `${input.year}-${input.month}-${input.day}`;
+                        console.log('日期字符串:', dateStr);
+                        
+                        // 计算时辰索引（0-11）
+                        const timeIndex = Math.floor(input.hour / 2);
+                        console.log('时辰索引:', timeIndex);
+                        
+                        // 调用 iztro - 使用最基本的参数
+                        const astrolabe = window.iztro.astro.bySolar(
+                            dateStr,
+                            timeIndex,
+                            input.gender === '男' ? 'male' : 'female',
+                            true  // fixLeap
+                        );
+                        
+                        console.log('计算成功!', astrolabe);
+                        
+                        // 使用iztro库的horoscope方法获取大运信息
+                        // 计算从出生到120岁的所有大运
+                        if (astrolabe.palaces && Array.isArray(astrolabe.palaces)) {
+                            console.log('开始使用iztro计算大运信息...');
+                            
+                            try {
+                                // 为每个年龄计算horoscope，提取大运信息
+                                const decadalMap = new Map(); // 存储每个宫位的大运年龄范围
+                                
+                                // 计算从1岁到120岁的运限
+                                for (let age = 1; age <= 120; age += 10) {
+                                    // 计算该年龄对应的日期
+                                    const targetYear = input.year + age - 1;
+                                    const targetDate = new Date(targetYear, input.month - 1, input.day);
+                                    
+                                    // 获取该年龄的运限信息
+                                    const horoscope = astrolabe.horoscope(targetDate, age);
+                                    
+                                    if (horoscope && horoscope.decadal) {
+                                        const decadalIndex = horoscope.decadal.index;
+                                        
+                                        // 记录这个宫位管辖的年龄范围
+                                        if (!decadalMap.has(decadalIndex)) {
+                                            decadalMap.set(decadalIndex, {
+                                                startAge: age,
+                                                endAge: age + 9,
+                                                heavenlyStem: horoscope.decadal.heavenlyStem,
+                                                earthlyBranch: horoscope.decadal.earthlyBranch,
+                                                palaceNames: horoscope.decadal.palaceNames || []
+                                            });
+                                            
+                                            console.log(`大运 ${age}-${age+9}岁: 宫位${decadalIndex} ${horoscope.decadal.palaceNames.join(',')}`);
+                                        }
+                                    }
+                                }
+                                
+                                // 将大运信息添加到对应的宫位
+                                astrolabe.palaces.forEach((palace, index) => {
+                                    if (decadalMap.has(index)) {
+                                        const decadalInfo = decadalMap.get(index);
+                                        palace.decadal = {
+                                            range: [decadalInfo.startAge, decadalInfo.endAge],
+                                            heavenlyStem: decadalInfo.heavenlyStem || palace.heavenlyStem || '',
+                                            earthlyBranch: decadalInfo.earthlyBranch || palace.earthlyBranch || '',
+                                            palaceNames: decadalInfo.palaceNames,
+                                            stars: []
+                                        };
+                                    }
+                                });
+                                
+                            } catch (err) {
+                                console.error('计算大运时出错:', err);
+                                // 如果horoscope方法不可用，使用astrolabe中已有的大运信息
+                                // iztro可能已经在palaces中包含了decadal信息
+                            }
+                        }
+                        
+                        // 保存到全局变量供后续使用
+                        window.lastAstrolabe = astrolabe;
+                        
+                        // 构建返回数据
+                        result = {
+                            success: true,
+                            solarDate: astrolabe.solarDate || dateStr,
+                            lunarDate: astrolabe.lunarDate || '农历日期',
+                            chineseDate: astrolabe.chineseDate || '',
+                            
+                            // 基本信息
+                            gender: astrolabe.gender || input.gender,
+                            zodiac: astrolabe.zodiac || '',
+                            sign: astrolabe.sign || '',
+                            fiveElementsClass: astrolabe.fiveElementsClass || '',
+                            
+                            // 命身宫信息
+                            earthlyBranchOfSoulPalace: astrolabe.earthlyBranchOfSoulPalace || '',
+                            earthlyBranchOfBodyPalace: astrolabe.earthlyBranchOfBodyPalace || '',
+                            soul: astrolabe.soul || '',
+                            body: astrolabe.body || '',
+                            time: astrolabe.time || '',
+                            timeRange: astrolabe.timeRange || '',
+                            
+                            // 宫位信息
+                            palaces: []
+                        };
+                        
+                        // 提取宫位数据
+                        if (astrolabe.palaces && Array.isArray(astrolabe.palaces)) {
+                            result.palaces = astrolabe.palaces.map((palace, idx) => {
+                                const palaceInfo = {
+                                    index: idx,
+                                    name: palace.name || `宫位${idx+1}`,
+                                    heavenlyStem: palace.heavenlyStem || '',
+                                    earthlyBranch: palace.earthlyBranch || '',
+                                    isBodyPalace: palace.isBodyPalace || false,
+                                    isSoulPalace: palace.isSoulPalace || false,
+                                    isOriginalPalace: palace.isOriginalPalace || false,
+                                    majorStars: [],
+                                    minorStars: [],
+                                    adjectiveStars: [],
+                                    changsheng12: [],
+                                    boshi12: [],
+                                    jiangqian12: [],
+                                    suiqian12: [],
+                                    ages: palace.ages || [],
+                                    decadal: null  // 初始化大运信息
+                                };
+                                
+                                // 确保ages数组包含完整的120岁范围
+                                if (palace.ages && palace.ages.length > 0) {
+                                    const firstAge = palace.ages[0];
+                                    const fullAges = [];
+                                    for (let age = firstAge; age <= 120; age += 12) {
+                                        fullAges.push(age);
+                                    }
+                                    palaceInfo.ages = fullAges;
+                                }
+                                
+                                // 提取大运信息
+                                if (palace.decadal) {
+                                    palaceInfo.decadal = {
+                                        range: palace.decadal.range || [],
+                                        heavenlyStem: palace.decadal.heavenlyStem || '',
+                                        earthlyBranch: palace.decadal.earthlyBranch || '',
+                                        palaceNames: palace.decadal.palaceNames || [],
+                                        stars: palace.decadal.stars || []
+                                    };
+                                    console.log(`宫位 ${palaceInfo.name} 包含大运信息:`, palaceInfo.decadal);
+                                } else {
+                                    console.log(`宫位 ${palaceInfo.name} 没有大运信息`);
+                                }
+                                
+                                // 提取星耀
+                                if (palace.majorStars) {
+                                    palaceInfo.majorStars = palace.majorStars.map(star => ({
+                                        name: star.name || star.toString(),
+                                        brightness: star.brightness || '',
+                                        mutagen: star.mutagen || ''
+                                    }));
+                                }
+                                
+                                if (palace.minorStars) {
+                                    palaceInfo.minorStars = palace.minorStars.map(star => ({
+                                        name: star.name || star.toString(),
+                                        brightness: star.brightness || '',
+                                        mutagen: star.mutagen || ''
+                                    }));
+                                }
+                                
+                                // 提取杂曜 - 非常重要！
+                                if (palace.adjectiveStars) {
+                                    console.log(`宫位 ${palace.name} 的杂曜原始数据:`, palace.adjectiveStars);
+                                    // 杂曜可能是字符串数组或对象数组
+                                    if (Array.isArray(palace.adjectiveStars)) {
+                                        if (palace.adjectiveStars.length > 0) {
+                                            if (typeof palace.adjectiveStars[0] === 'string') {
+                                                // 如果是字符串数组，直接使用
+                                                palaceInfo.adjectiveStars = palace.adjectiveStars;
+                                                console.log(`  -> 字符串数组:`, palaceInfo.adjectiveStars);
+                                            } else {
+                                                // 如果是对象数组，提取名称
+                                                palaceInfo.adjectiveStars = palace.adjectiveStars.map(star => 
+                                                    star.name || star.toString()
+                                                );
+                                                console.log(`  -> 对象数组提取:`, palaceInfo.adjectiveStars);
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // 添加神煞系统（如果需要显示）
+                                if (palace.changsheng12) {
+                                    palaceInfo.changsheng12 = palace.changsheng12;
+                                }
+                                if (palace.boshi12) {
+                                    palaceInfo.boshi12 = palace.boshi12;
+                                }
+                                
+                                return palaceInfo;
+                            });
+                        }
+                        
+                    } catch(e) {
+                        console.error('计算失败:', e);
+                        
+                        // 方法2：如果失败，返回测试数据
+                        result = {
+                            success: false,
+                            error: e.toString(),
+                            testMode: true,
+                            solarDate: `${input.year}年${input.month}月${input.day}日`,
+                            lunarDate: '测试模式',
+                            gender: input.gender,
+                            
+                            // 返回测试数据，让UI可以显示
+                            palaces: [
+                                { index: 0, name: '命宫', majorStars: [{name: '紫微'}], isSoulPalace: true },
+                                { index: 1, name: '兄弟', majorStars: [{name: '天机'}] },
+                                { index: 2, name: '夫妻', majorStars: [{name: '太阳'}] },
+                                { index: 3, name: '子女', majorStars: [{name: '武曲'}] },
+                                { index: 4, name: '财帛', majorStars: [{name: '天同'}] },
+                                { index: 5, name: '疾厄', majorStars: [{name: '廉贞'}] },
+                                { index: 6, name: '迁移', majorStars: [] },
+                                { index: 7, name: '交友', majorStars: [{name: '天府'}] },
+                                { index: 8, name: '官禄', majorStars: [{name: '太阴'}] },
+                                { index: 9, name: '田宅', majorStars: [{name: '贪狼'}] },
+                                { index: 10, name: '福德', majorStars: [{name: '巨门'}] },
+                                { index: 11, name: '父母', majorStars: [{name: '天相'}], isBodyPalace: true }
+                            ]
+                        };
+                    }
+                    
+                    // 发送结果前检查大运信息
+                    console.log('最终结果中的宫位数量:', result.palaces ? result.palaces.length : 0);
+                    if (result.palaces) {
+                        const palacesWithDecadal = result.palaces.filter(p => p.decadal !== null && p.decadal !== undefined);
+                        console.log('包含大运信息的宫位数量:', palacesWithDecadal.length);
+                    }
+                    
+                    // 发送结果
+                    window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify(result));
+                    
+                } catch (error) {
+                    console.error('严重错误:', error);
+                    window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify({
+                        error: error.toString(),
+                        stack: error.stack
+                    }));
+                }
+            };
+            
+            // 保存最近计算的星盘，用于后续运限计算
+            window.lastAstrolabe = null;
+            
+            // 扩展功能：获取大运数据
+            window.getDecadalData = function(age) {
+                console.log('获取大运数据，年龄:', age);
+                
+                if (!window.lastAstrolabe) {
+                    return JSON.stringify({
+                        success: false,
+                        error: '请先生成星盘'
+                    });
+                }
+                
+                try {
+                    // 从星盘数据中提取大运信息
+                    const palaces = window.lastAstrolabe.palaces || [];
+                    let decadalInfo = null;
+                    
+                    // 查找包含当前年龄的大运
+                    for (let palace of palaces) {
+                        if (palace.decadal && palace.decadal.range) {
+                            const [startAge, endAge] = palace.decadal.range;
+                            if (age >= startAge && age <= endAge) {
+                                decadalInfo = {
+                                    palace: palace.name,
+                                    palaceIndex: palace.index,
+                                    range: palace.decadal.range,
+                                    heavenlyStem: palace.decadal.heavenlyStem,
+                                    earthlyBranch: palace.decadal.earthlyBranch,
+                                    stars: palace.decadal.stars || []
+                                };
+                                break;
+                            }
+                        }
+                    }
+                    
+                    return JSON.stringify({
+                        success: true,
+                        data: decadalInfo
+                    });
+                    
+                } catch (error) {
+                    return JSON.stringify({
+                        success: false,
+                        error: error.toString()
+                    });
+                }
+            };
+            
+            // 获取流年数据
+            window.getYearlyData = function(year) {
+                console.log('获取流年数据，年份:', year);
+                
+                if (!window.lastAstrolabe) {
+                    return JSON.stringify({
+                        success: false,
+                        error: '请先生成星盘'
+                    });
+                }
+                
+                try {
+                    // 这里可以调用iztro的horoscope功能
+                    // 但需要确认iztro库是否暴露了相关API
+                    const yearlyData = {
+                        year: year,
+                        palaces: [],
+                        // 流年四化等信息
+                        mutagen: []
+                    };
+                    
+                    // 遍历宫位，添加流年信息
+                    const palaces = window.lastAstrolabe.palaces || [];
+                    for (let palace of palaces) {
+                        yearlyData.palaces.push({
+                            name: palace.name,
+                            index: palace.index,
+                            jiangqian12: palace.jiangqian12 || [],
+                            suiqian12: palace.suiqian12 || []
+                        });
+                    }
+                    
+                    return JSON.stringify({
+                        success: true,
+                        data: yearlyData
+                    });
+                    
+                } catch (error) {
+                    return JSON.stringify({
+                        success: false,
+                        error: error.toString()
+                    });
+                }
+            };
+            
+            // 获取流月数据
+            window.getMonthlyData = function(year, month) {
+                console.log('获取流月数据，年月:', year, month);
+                
+                if (!window.lastAstrolabe) {
+                    return JSON.stringify({
+                        success: false,
+                        error: '请先生成星盘'
+                    });
+                }
+                
+                try {
+                    // 根据年月计算流月信息
+                    const monthlyData = {
+                        year: year,
+                        month: month,
+                        palaces: [],
+                        // 流月主要影响
+                        mainInfluence: getMonthMainInfluence(month),
+                        // 本月运势评分
+                        scores: {
+                            overall: 60 + Math.floor(Math.random() * 40),
+                            career: 60 + Math.floor(Math.random() * 40),
+                            love: 60 + Math.floor(Math.random() * 40),
+                            wealth: 60 + Math.floor(Math.random() * 40),
+                            health: 60 + Math.floor(Math.random() * 40)
+                        }
+                    };
+                    
+                    // 添加宫位信息
+                    const palaces = window.lastAstrolabe.palaces || [];
+                    for (let palace of palaces) {
+                        monthlyData.palaces.push({
+                            name: palace.name,
+                            index: palace.index,
+                            // 流月重点宫位标记
+                            isMonthlyFocus: (palace.index === (month - 1) % 12)
+                        });
+                    }
+                    
+                    return JSON.stringify({
+                        success: true,
+                        data: monthlyData
+                    });
+                    
+                } catch (error) {
+                    return JSON.stringify({
+                        success: false,
+                        error: error.toString()
+                    });
+                }
+            };
+            
+            // 获取流日数据
+            window.getDailyData = function(year, month, day) {
+                console.log('获取流日数据:', year, month, day);
+                
+                if (!window.lastAstrolabe) {
+                    return JSON.stringify({
+                        success: false,
+                        error: '请先生成星盘'
+                    });
+                }
+                
+                try {
+                    // 计算流日信息
+                    const date = new Date(year, month - 1, day);
+                    const dayOfWeek = date.getDay();
+                    const lunarInfo = calculateLunarDay(year, month, day);
+                    
+                    const dailyData = {
+                        year: year,
+                        month: month,
+                        day: day,
+                        weekday: dayOfWeek,
+                        lunarDay: lunarInfo.day,
+                        // 吉时
+                        luckyHours: getLuckyHours(day),
+                        // 今日宜忌
+                        suitable: getDailySuitable(day),
+                        avoid: getDailyAvoid(day),
+                        // 运势评分
+                        scores: {
+                            overall: 60 + Math.floor(Math.random() * 40),
+                            career: 60 + Math.floor(Math.random() * 40),
+                            love: 60 + Math.floor(Math.random() * 40),
+                            wealth: 60 + Math.floor(Math.random() * 40),
+                            health: 60 + Math.floor(Math.random() * 40)
+                        },
+                        // 主要影响宫位
+                        mainPalace: (day - 1) % 12
+                    };
+                    
+                    return JSON.stringify({
+                        success: true,
+                        data: dailyData
+                    });
+                    
+                } catch (error) {
+                    return JSON.stringify({
+                        success: false,
+                        error: error.toString()
+                    });
+                }
+            };
+            
+            // 辅助函数：获取月度主要影响
+            function getMonthMainInfluence(month) {
+                const influences = [
+                    '事业发展月，把握机遇',
+                    '财运旺盛，投资获利',
+                    '感情丰富，桃花朵朵',
+                    '学习进步，知识增长',
+                    '贵人相助，人脉拓展',
+                    '健康关注，调理身心',
+                    '外出机遇，开拓视野',
+                    '合作共赢，团队协作',
+                    '创新突破，思维活跃',
+                    '稳健发展，积累经验',
+                    '总结规划，展望未来',
+                    '收获满满，年终冲刺'
+                ];
+                return influences[month - 1];
+            }
+            
+            // 辅助函数：获取吉时
+            function getLuckyHours(day) {
+                const hours = ['子时', '丑时', '寅时', '卯时', '辰时', '巳时', 
+                              '午时', '未时', '申时', '酉时', '戌时', '亥时'];
+                const startIndex = day % 12;
+                return [
+                    hours[startIndex],
+                    hours[(startIndex + 4) % 12],
+                    hours[(startIndex + 8) % 12]
+                ];
+            }
+            
+            // 辅助函数：获取每日宜事
+            function getDailySuitable(day) {
+                const suitable = [
+                    '祈福', '出行', '嫁娶', '开市', '求财', '交易',
+                    '签约', '会友', '求职', '学习', '装修', '搬家'
+                ];
+                const index = day % suitable.length;
+                return [
+                    suitable[index],
+                    suitable[(index + 3) % suitable.length],
+                    suitable[(index + 6) % suitable.length]
+                ];
+            }
+            
+            // 辅助函数：获取每日忌事
+            function getDailyAvoid(day) {
+                const avoid = [
+                    '动土', '破土', '安葬', '诉讼', '冲突', '赌博',
+                    '争执', '冒险', '大额投资', '重大决策', '远行', '借贷'
+                ];
+                const index = day % avoid.length;
+                return [
+                    avoid[index],
+                    avoid[(index + 4) % avoid.length]
+                ];
+            }
+            
+            // 辅助函数：简单的农历计算（仅示例）
+            function calculateLunarDay(year, month, day) {
+                // 这里应该使用实际的农历算法
+                // 暂时返回模拟数据
+                const lunarDays = ['初一', '初二', '初三', '初四', '初五', '初六', '初七', 
+                                  '初八', '初九', '初十', '十一', '十二', '十三', '十四', 
+                                  '十五', '十六', '十七', '十八', '十九', '二十', '廿一', 
+                                  '廿二', '廿三', '廿四', '廿五', '廿六', '廿七', '廿八', 
+                                  '廿九', '三十'];
+                return {
+                    day: lunarDays[(day - 1) % lunarDays.length]
+                };
+            };
+            
+            // 修改原有的calculateAstrolabe，保存星盘数据
+            const originalCalculate = window.calculateAstrolabe;
+            window.calculateAstrolabe = function(inputJson) {
+                const result = originalCalculate(inputJson);
+                // 保存星盘供后续使用
+                try {
+                    const parsed = JSON.parse(result);
+                    if (parsed.success) {
+                        window.lastAstrolabe = parsed;
+                    }
+                } catch (e) {
+                    console.log('保存星盘失败:', e);
+                }
+                return result;
+            };
+            
+            // 通知iOS准备就绪
+            if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.iztroHandler) {
+                window.webkit.messageHandlers.iztroHandler.postMessage(JSON.stringify({
+                    status: 'ready',
+                    version: 'final'
+                }));
+            }
+        };
+    </script>
+</head>
+<body>
+    <div style="display:none;">紫微斗数计算引擎</div>
+</body>
+</html>
