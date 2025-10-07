@@ -518,12 +518,51 @@ struct ChatTab: View {
                 // 加载用户配额信息
                 if let userId = AuthManager.shared.currentUser?.id {
                     _ = try? await SupabaseManager.shared.getUserQuota(userId: userId)
+                    
+                    // 加载云端历史消息并转换为ChatMessage
+                    await loadCloudChatHistory(userId: userId)
                 }
             }
             
             await MainActor.run {
                 isInitializing = false
             }
+        }
+    }
+    
+    // 加载云端聊天历史
+    private func loadCloudChatHistory(userId: String) async {
+        do {
+            let cloudMessages = try await SupabaseManager.shared.getRecentMessages(userId: userId)
+            print("🌐 从云端加载了 \(cloudMessages.count) 条消息")
+            
+            // 转换为ChatMessage格式
+            let chatMessages = cloudMessages.map { dbMessage in
+                ChatMessage(
+                    id: UUID(uuidString: dbMessage.id) ?? UUID(),
+                    content: dbMessage.content,
+                    isFromUser: dbMessage.role == "user",
+                    timestamp: ISO8601DateFormatter().date(from: dbMessage.createdAt) ?? Date(),
+                    thinkingContent: nil,
+                    isThinkingVisible: false
+                )
+            }
+            
+            await MainActor.run {
+                // 合并云端消息和本地消息，去重
+                var allMessages = messages
+                for cloudMessage in chatMessages {
+                    if !allMessages.contains(where: { $0.id == cloudMessage.id }) {
+                        allMessages.append(cloudMessage)
+                    }
+                }
+                
+                // 按时间排序
+                messages = allMessages.sorted { $0.timestamp < $1.timestamp }
+                print("📚 合并后总消息数: \(messages.count)")
+            }
+        } catch {
+            print("❌ 加载云端历史消息失败: \(error)")
         }
     }
 }
