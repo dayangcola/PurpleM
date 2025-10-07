@@ -299,7 +299,7 @@ struct ChatTab: View {
                     await MainActor.run {
                         if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
                             let newContent = fullResponse  // 直接使用完整响应
-                            print("🔄 更新消息内容: \(newContent.prefix(50))...")
+                            print("🔄 流式更新消息内容: \(newContent.prefix(50))...")
                             print("📊 当前消息数组大小: \(messages.count)")
                             
                             messages[index] = ChatMessage(
@@ -311,14 +311,14 @@ struct ChatTab: View {
                                 isThinkingVisible: false
                             )
                             
-                            print("✅ 消息已更新，新内容长度: \(newContent.count)")
+                            print("✅ 流式消息已更新，新内容长度: \(newContent.count)")
                             
                             // 自动滚动到底部
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 scrollProxy?.scrollTo(aiMessageId, anchor: .bottom)
                             }
                         } else {
-                            print("❌ 未找到消息ID: \(aiMessageId)")
+                            print("❌ 流式更新时未找到消息ID: \(aiMessageId)")
                             print("📋 当前消息ID列表: \(messages.map { $0.id })")
                         }
                     }
@@ -329,19 +329,22 @@ struct ChatTab: View {
                     currentStreamingMessageId = nil
                     
                     // 🔗 服务端会返回知识库引用，暂时不需要客户端处理
-                    let finalResponse = fullResponse
+                    print("🎯 流式完成，最终内容长度: \(fullResponse.count)")
+                    print("🎯 最终内容预览: \(fullResponse.prefix(100))...")
                     
                     // 更新最终消息
                     if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
                         messages[index] = ChatMessage(
                             id: aiMessageId,
-                            content: finalResponse,
+                            content: fullResponse,
                             isFromUser: false,
                             timestamp: Date(),
                             thinkingContent: nil,  // 暂时不使用思维链
                             isThinkingVisible: false
                         )
-                        print("🎯 最终消息已更新，内容长度: \(finalResponse.count)")
+                        print("🎯 最终消息已更新，内容长度: \(fullResponse.count)")
+                    } else {
+                        print("❌ 最终更新时未找到消息ID: \(aiMessageId)")
                     }
                     
                     saveChatHistory()
