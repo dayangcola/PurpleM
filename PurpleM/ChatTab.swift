@@ -80,6 +80,8 @@ struct ChatTab: View {
                         // 欢迎页面
                         WelcomeMessageView(onQuestionTap: sendQuickQuestion)
                     } else {
+                        // 调试信息
+                        let _ = print("🎯 显示 \(messages.count) 条消息")
                         // 聊天记录区域
                         ScrollViewReader { proxy in
                             ScrollView {
@@ -302,19 +304,28 @@ struct ChatTab: View {
                     // 更新UI上的消息
                     await MainActor.run {
                         if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
+                            let newContent = fullAnswer.isEmpty ? fullResponse : fullAnswer
+                            print("🔄 更新消息内容: \(newContent.prefix(50))...")
+                            print("📊 当前消息数组大小: \(messages.count)")
+                            
                             messages[index] = ChatMessage(
                                 id: aiMessageId,
-                                content: fullAnswer.isEmpty ? fullResponse : fullAnswer,
+                                content: newContent,
                                 isFromUser: false,
                                 timestamp: Date(),
                                 thinkingContent: fullThinking.isEmpty ? nil : fullThinking,
                                 isThinkingVisible: true
                             )
                             
+                            print("✅ 消息已更新，新内容长度: \(newContent.count)")
+                            
                             // 自动滚动到底部
                             withAnimation(.easeInOut(duration: 0.2)) {
                                 scrollProxy?.scrollTo(aiMessageId, anchor: .bottom)
                             }
+                        } else {
+                            print("❌ 未找到消息ID: \(aiMessageId)")
+                            print("📋 当前消息ID列表: \(messages.map { $0.id })")
                         }
                     }
                 }
@@ -489,6 +500,10 @@ struct ChatTab: View {
         if let data = UserDefaults.standard.data(forKey: "ChatHistory"),
            let history = try? JSONDecoder().decode([ChatMessage].self, from: data) {
             messages = history
+            print("📚 加载了 \(history.count) 条历史消息")
+        } else {
+            print("📚 没有找到历史消息，初始化为空数组")
+            messages = []
         }
     }
     
