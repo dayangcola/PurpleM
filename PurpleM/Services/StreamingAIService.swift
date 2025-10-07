@@ -285,38 +285,33 @@ extension StreamingAIService: URLSessionDataDelegate {
                     if let jsonData = jsonString.data(using: .utf8),
                        let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
                         
-                        // 检查是否是我们的格式 {type: "text", content: "..."}
-                        if let type = json["type"] as? String,
-                           (type == "text" || type == "content"),  // 兼容两种格式
-                           let content = json["content"] as? String {
-                            print("📝 收到内容块: \(content)")
-                            eventParser.onEvent?(.message(content))
-                            continue
+                        if let type = (json["type"] as? String)?.lowercased() {
+                            switch type {
+                            case "text", "content", "chunk":
+                                if let content = json["content"] as? String {
+                                    print("📝 收到内容块: \(content)")
+                                    eventParser.onEvent?(.message(content))
+                                    continue
+                                }
+                            case "connected":
+                                print("✅ 流式连接已建立")
+                                continue
+                            case "done":
+                                print("✅ 流式响应已完成")
+                                eventParser.onEvent?(.completed)
+                                continue
+                            case "error":
+                                if let errorMessage = json["error"] as? String {
+                                    print("❌ 服务端错误: \(errorMessage)")
+                                    eventParser.onEvent?(.error(NSError(domain: "StreamingAI", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])))
+                                    continue
+                                }
+                            default:
+                                break
+                            }
                         }
                         
-                        // 如果是连接成功消息
-                        if let type = json["type"] as? String,
-                           type == "connected" {
-                            print("✅ 流式连接已建立")
-                            continue
-                        }
-                        
-                        // 如果是完成信号
-                        if let type = json["type"] as? String,
-                           type == "done" {
-                            print("✅ 流式响应已完成")
-                            eventParser.onEvent?(.completed)
-                            continue
-                        }
-                        
-                        // 如果是错误信号
-                        if let type = json["type"] as? String,
-                           type == "error",
-                           let errorMessage = json["error"] as? String {
-                            print("❌ 服务端错误: \(errorMessage)")
-                            eventParser.onEvent?(.error(NSError(domain: "StreamingAI", code: -1, userInfo: [NSLocalizedDescriptionKey: errorMessage])))
-                            continue
-                        }
+                        // 未处理的类型交给OpenAI兼容解析
                     }
                     
                     // 尝试解析 OpenAI 格式（备用）

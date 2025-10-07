@@ -429,29 +429,140 @@ struct ChatTab: View {
     
     // 提取命盘上下文
     private func extractChartContext(for message: String) -> String? {
-        guard let chart = userDataManager.currentChart else { return nil }
-        
-        var context = "【命盘关键信息】\n"
-        
-        // 提取相关宫位
-        let palaceKeywords = [
+        guard let chart = userDataManager.currentChart,
+              let data = chart.jsonData.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        var sections: [String] = []
+
+        // 基本信息
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "HH:mm"
+
+        var basicLines: [String] = []
+        basicLines.append("姓名：\(chart.userInfo.name)")
+        basicLines.append("性别：\(chart.userInfo.gender)")
+        let birthDate = dateFormatter.string(from: chart.userInfo.birthDate)
+        let birthTime = timeFormatter.string(from: chart.userInfo.birthTime)
+        basicLines.append("公历生日：\(birthDate) \(birthTime)")
+        if chart.userInfo.isLunarDate {
+            basicLines.append("已按农历录入生日")
+        }
+        if let location = chart.userInfo.birthLocation, !location.isEmpty {
+            basicLines.append("出生地：\(location)")
+        }
+        if let zodiac = json["zodiac"] as? String, !zodiac.isEmpty {
+            basicLines.append("生肖：\(zodiac)")
+        }
+        if let sign = json["sign"] as? String, !sign.isEmpty {
+            basicLines.append("命宫：\(sign)")
+        }
+        if let fiveElements = json["fiveElementsClass"] as? String, !fiveElements.isEmpty {
+            basicLines.append("五行分类：\(fiveElements)")
+        }
+        sections.append("【命盘基本信息】\n" + basicLines.joined(separator: "\n"))
+
+        // 关键词映射
+        let palaceKeywords: [String: String] = [
             "事业": "官禄宫",
             "工作": "官禄宫",
+            "职业": "官禄宫",
+            "晋升": "官禄宫",
             "感情": "夫妻宫",
             "爱情": "夫妻宫",
+            "婚姻": "夫妻宫",
             "财运": "财帛宫",
             "金钱": "财帛宫",
+            "收入": "财帛宫",
             "健康": "疾厄宫",
-            "家庭": "田宅宫"
+            "身体": "疾厄宫",
+            "家庭": "田宅宫",
+            "住房": "田宅宫",
+            "朋友": "仆役宫",
+            "人际": "仆役宫",
+            "学习": "父母宫",
+            "考试": "父母宫",
+            "子女": "子女宫",
+            "小孩": "子女宫",
+            "流年": "命宫",
+            "运势": "命宫"
         ]
-        
+
+        var targetPalaces = Set<String>()
         for (keyword, palaceName) in palaceKeywords {
             if message.contains(keyword) {
-                context += "相关宫位：\(palaceName)\n"
+                targetPalaces.insert(palaceName)
             }
         }
-        
-        return context.isEmpty ? nil : context
+        if targetPalaces.isEmpty {
+            targetPalaces = ["命宫", "身宫", "福德宫"]
+        }
+
+        guard let palacesArray = json["palaces"] as? [[String: Any]], !palacesArray.isEmpty else {
+            return sections.joined(separator: "\n\n")
+        }
+
+        var palaceSummaries: [String] = []
+        for palace in palacesArray {
+            guard let palaceName = palace["name"] as? String,
+                  targetPalaces.contains(palaceName) else { continue }
+
+            var lines: [String] = []
+            if let stem = palace["heavenlyStem"] as? String,
+               let branch = palace["earthlyBranch"] as? String,
+               !stem.isEmpty || !branch.isEmpty {
+                lines.append("天干地支：\(stem)\(branch)")
+            }
+
+            if let majorStars = palace["majorStars"] as? [[String: Any]] {
+                let names = majorStars.compactMap { $0["name"] as? String }.filter { !$0.isEmpty }
+                if !names.isEmpty {
+                    lines.append("主星：\(names.joined(separator: "、"))")
+                }
+            }
+
+            if let minorStars = palace["minorStars"] as? [[String: Any]] {
+                let names = minorStars.compactMap { $0["name"] as? String }.filter { !$0.isEmpty }
+                if !names.isEmpty {
+                    lines.append("辅星：\(names.joined(separator: "、"))")
+                }
+            }
+
+            if let adjectiveStars = palace["adjectiveStars"] as? [String], !adjectiveStars.isEmpty {
+                lines.append("杂曜：\(adjectiveStars.joined(separator: "、"))")
+            } else if let adjectiveObjects = palace["adjectiveStars"] as? [[String: Any]] {
+                let names = adjectiveObjects.compactMap { $0["name"] as? String }.filter { !$0.isEmpty }
+                if !names.isEmpty {
+                    lines.append("杂曜：\(names.joined(separator: "、"))")
+                }
+            }
+
+            if let decadal = palace["decadal"] as? [String: Any],
+               let range = decadal["range"] as? [Int],
+               range.count == 2 {
+                let start = range[0]
+                let end = range[1]
+                let stem = (decadal["heavenlyStem"] as? String) ?? ""
+                let branch = (decadal["earthlyBranch"] as? String) ?? ""
+                lines.append("大限：\(start)-\(end)岁，\(stem)\(branch)")
+            }
+
+            if !lines.isEmpty {
+                palaceSummaries.append("【\(palaceName)】\n" + lines.joined(separator: "\n"))
+            }
+
+            if palaceSummaries.count >= 4 { break }
+        }
+
+        if !palaceSummaries.isEmpty {
+            sections.append(palaceSummaries.joined(separator: "\n\n"))
+        }
+
+        return sections.joined(separator: "\n\n")
     }
     
     // 检测用户情绪
@@ -481,21 +592,25 @@ struct ChatTab: View {
         messages = []
         // 重置AI服务
         EnhancedAIService.shared.resetConversation()
-        UserDefaults.standard.removeObject(forKey: "ChatHistory")
+        UserDefaults.standard.removeObject(forKey: chatHistoryKey())
     }
     
     // 保存聊天历史
     private func saveChatHistory() {
         // 只保存最近50条消息
         let recentMessages = Array(messages.suffix(50))
+        guard !recentMessages.isEmpty else { return }
+
+        let key = chatHistoryKey()
         if let data = try? JSONEncoder().encode(recentMessages) {
-            UserDefaults.standard.set(data, forKey: "ChatHistory")
+            UserDefaults.standard.set(data, forKey: key)
         }
     }
-    
+
     // 加载聊天历史
     private func loadChatHistory() {
-        if let data = UserDefaults.standard.data(forKey: "ChatHistory"),
+        let key = chatHistoryKey()
+        if let data = UserDefaults.standard.data(forKey: key),
            let history = try? JSONDecoder().decode([ChatMessage].self, from: data) {
             messages = history
             print("📚 加载了 \(history.count) 条历史消息")
@@ -503,6 +618,13 @@ struct ChatTab: View {
             print("📚 没有找到历史消息，初始化为空数组")
             messages = []
         }
+    }
+
+    private func chatHistoryKey() -> String {
+        if let userId = userDataManager.currentUserId, !userId.isEmpty {
+            return "ChatHistory_\(userId)"
+        }
+        return "ChatHistory_Default"
     }
     
     // AI模式监听器已移除 - 统一使用增强版本
@@ -689,11 +811,23 @@ struct ChatBubble: View {
     @State private var showThinking: Bool = true
     
     var body: some View {
+        let trimmedContent = message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+        return Group {
+            if !message.isFromUser && trimmedContent.isEmpty {
+                EmptyView()
+            } else {
+                chatBody(trimmedContent: trimmedContent)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func chatBody(trimmedContent: String) -> some View {
         HStack {
             if message.isFromUser {
                 Spacer()
             }
-            
+
             VStack(alignment: message.isFromUser ? .trailing : .leading, spacing: 8) {
                 // 流式响应指示器
                 if !message.isFromUser && isStreaming {
@@ -743,7 +877,7 @@ struct ChatBubble: View {
                 
                 // 消息内容
                 let _ = print("🔍 检查消息内容: '\(message.content)' (长度: \(message.content.count))")
-                if !message.content.isEmpty {
+                if !trimmedContent.isEmpty {
                     Text(message.content)
                     .font(.system(size: 15))
                     .foregroundColor(message.isFromUser ? .white : .crystalWhite)
