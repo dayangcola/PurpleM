@@ -30,7 +30,7 @@ export default async function handler(req, res) {
   try {
     const { 
       messages = [], 
-      model = 'gpt-3.5-turbo',
+      model = 'openai/gpt-5',
       temperature = 0.8,
       stream = true
     } = req.body;

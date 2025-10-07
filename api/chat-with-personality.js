@@ -183,7 +183,7 @@ function buildSystemPrompt(personality, userPrefs) {
 
 // 根据用户等级选择模型
 async function selectModelByUserTier(userId) {
-  if (!userId) return 'gpt-3.5-turbo';
+  if (!userId) return 'openai/gpt-5';
 
   const { data } = await supabase
     .from('user_ai_quotas')
@@ -195,9 +195,9 @@ async function selectModelByUserTier(userId) {
     case 'unlimited':
       return 'gpt-4';
     case 'pro':
-      return 'gpt-3.5-turbo';
+      return 'openai/gpt-5';
     default:
-      return 'gpt-3.5-turbo';
+      return 'openai/gpt-5';
   }
 }
 
@@ -252,7 +252,7 @@ async function updateCache(query, response, userId) {
       query_text: query,
       response_text: response,
       cache_until: cacheUntil.toISOString(),
-      model_used: 'gpt-3.5-turbo'
+      model_used: 'openai/gpt-5'
     });
 }
 

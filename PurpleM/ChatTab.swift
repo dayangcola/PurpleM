@@ -359,15 +359,33 @@ struct ChatTab: View {
                 print("❌ 流式响应错误: \(error)")
                 print("📝 错误详情: \(error.localizedDescription)")
                 
-                // 错误处理：降级到普通模式
+                // 错误处理：显示错误信息给用户
                 await MainActor.run {
-                    print("⚠️ 降级到普通模式...")
-                    // 移除占位消息
-                    messages.removeAll { $0.id == aiMessageId }
+                    print("⚠️ 显示错误信息给用户...")
+                    
+                    // 更新占位消息为错误信息
+                    if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
+                        let errorMessage = "抱歉，AI服务暂时不可用。错误信息：\(error.localizedDescription)"
+                        messages[index] = ChatMessage(
+                            id: aiMessageId,
+                            content: errorMessage,
+                            isFromUser: false,
+                            timestamp: Date(),
+                            thinkingContent: nil,
+                            isThinkingVisible: false
+                        )
+                    }
+                    
                     currentStreamingMessageId = nil
                     
-                    // 使用普通模式重试
-                    sendNormalMessage(messageText)
+                    // 3秒后自动重试
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                        print("🔄 自动重试...")
+                        // 移除错误消息
+                        messages.removeAll { $0.id == aiMessageId }
+                        // 使用普通模式重试
+                        sendNormalMessage(messageText)
+                    }
                 }
             }
         }

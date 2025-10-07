@@ -44,7 +44,7 @@ export default async function handler(req, res) {
     const { 
       messages = [], 
       userMessage = '',
-      model = 'gpt-3.5-turbo',  // 默认使用 GPT-3.5-turbo
+      model = 'standard',  // 默认使用标准模式
       temperature = 0.8,
       stream = true,
       userInfo = null,
@@ -190,6 +190,16 @@ export default async function handler(req, res) {
     // 发送初始事件
     res.write('data: {"type":"start"}\n\n');
 
+    // 模型映射 - 将内部模型名称映射到实际的OpenAI模型
+    const modelMap = {
+      'fast': 'openai/gpt-5',           // 快速模式使用GPT-5
+      'standard': 'openai/gpt-5',        // 标准模式使用GPT-5
+      'advanced': 'openai/gpt-5'         // 高级模式也使用GPT-5
+    };
+    const actualModel = modelMap[model] || 'openai/gpt-5';
+    
+    console.log(`🤖 使用模型: ${model} -> ${actualModel}`);
+
     // 调用 Vercel AI Gateway
     const response = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
       method: 'POST',
@@ -198,7 +208,7 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${VERCEL_AI_GATEWAY_KEY}`
       },
       body: JSON.stringify({
-        model: `openai/${model}`,
+        model: actualModel,  // 使用映射后的实际模型名称
         messages: allMessages,
         temperature,
         max_tokens: 2000,
@@ -209,7 +219,7 @@ export default async function handler(req, res) {
     if (!response.ok) {
       const error = await response.text();
       console.error('❌ AI Gateway 错误:', error);
-      res.write(`data: {"type":"error","error":"${error}"}\n\n`);
+      res.write(`data: {"type":"error","error":"${JSON.stringify({error: error})}"}\n\n`);
       res.end();
       return;
     }

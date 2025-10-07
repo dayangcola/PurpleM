@@ -9,7 +9,9 @@ import Foundation
 import PDFKit
 import Vision
 import VisionKit
+#if canImport(UIKit)
 import UIKit
+#endif
 
 // MARK: - PDF处理器
 class PDFProcessor: ObservableObject {

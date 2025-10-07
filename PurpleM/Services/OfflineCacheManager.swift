@@ -6,7 +6,9 @@
 //
 
 import Foundation
+#if canImport(UIKit)
 import UIKit
+#endif
 
 // MARK: - 缓存策略枚举
 enum CachePolicy {
@@ -68,12 +70,14 @@ class OfflineCacheManager {
         memoryCache.totalCostLimit = 50 * 1024 * 1024 // 50MB
         
         // 监听内存警告
+        #if canImport(UIKit)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(handleMemoryWarning),
             name: UIApplication.didReceiveMemoryWarningNotification,
             object: nil
         )
+        #endif
         
         // 启动时清理过期缓存
         Task {

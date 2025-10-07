@@ -75,7 +75,7 @@ export default async function handler(req, res) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'openai/gpt-3.5-turbo',
+            model: 'openai/gpt-5',
             messages,
             temperature: 0.8,
             max_tokens: 1000,
@@ -105,7 +105,7 @@ export default async function handler(req, res) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'gpt-3.5-turbo',
+            model: 'openai/gpt-5',
             messages,
             temperature: 0.8,
             max_tokens: 1000,
@@ -133,7 +133,7 @@ export default async function handler(req, res) {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'gpt-3.5-turbo',
+            model: 'openai/gpt-5',
             messages,
             temperature: 0.8,
             max_tokens: 1000,

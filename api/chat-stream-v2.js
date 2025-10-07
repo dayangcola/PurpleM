@@ -79,11 +79,11 @@ export default async function handler(req, res) {
 
     // 3. 选择模型
     const modelMap = {
-      'fast': 'gpt-3.5-turbo',      // 快速模式
-      'standard': 'gpt-3.5-turbo',   // 标准模式也用 3.5，节约成本
-      'advanced': 'gpt-4o-mini',     // 高级模式用 4o-mini
+      'fast': 'openai/gpt-5',        // 快速模式使用GPT-5
+      'standard': 'openai/gpt-5',    // 标准模式使用GPT-5
+      'advanced': 'openai/gpt-5',    // 高级模式使用GPT-5
     };
-    const selectedModel = modelMap[model] || 'gpt-3.5-turbo';  // 默认 GPT-3.5
+    const selectedModel = modelMap[model] || 'openai/gpt-5';  // 默认 GPT-5
     
     // 4. 获取场景配置
     const sceneConfig = scene ? SCENE_CONFIGS[scene] : {};

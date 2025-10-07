@@ -65,7 +65,7 @@ export default async function handler(req, res) {
         'Authorization': `Bearer ${AI_GATEWAY_KEY}`
       },
       body: JSON.stringify({
-        model: 'openai/gpt-3.5-turbo',  // 注意：使用 openai/ 前缀
+        model: 'openai/gpt-5',  // 使用 GPT-5 模型
         messages: messages,
         temperature: 0.8,
         max_tokens: 800,

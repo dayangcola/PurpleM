@@ -6,7 +6,9 @@
 //
 
 import SwiftUI
+#if canImport(UIKit)
 import UIKit
+#endif
 
 // MARK: - 完美版星盘渲染器
 struct PerfectChartRenderer: View {
