@@ -289,22 +289,16 @@ struct ChatTab: View {
                 for try await chunk in stream {
                     fullResponse += chunk
                     print("📨 收到数据块: \(chunk.prefix(20))...")
+                    print("📊 当前fullResponse长度: \(fullResponse.count)")
                     
-                    // 解析思维链内容
-                    let parsed = thinkingParser.parse(chunk)
-                    
-                    if let thinking = parsed.thinking {
-                        fullThinking = thinking
-                    }
-                    
-                    if let answer = parsed.answer {
-                        fullAnswer += answer
-                    }
+                    // 直接使用接收到的内容，不进行思维链解析
+                    // 因为API返回的是普通文本，不是思维链格式
+                    print("📝 直接使用流式内容: \(chunk.prefix(30))...")
                     
                     // 更新UI上的消息
                     await MainActor.run {
                         if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
-                            let newContent = fullAnswer.isEmpty ? fullResponse : fullAnswer
+                            let newContent = fullResponse  // 直接使用完整响应
                             print("🔄 更新消息内容: \(newContent.prefix(50))...")
                             print("📊 当前消息数组大小: \(messages.count)")
                             
@@ -313,8 +307,8 @@ struct ChatTab: View {
                                 content: newContent,
                                 isFromUser: false,
                                 timestamp: Date(),
-                                thinkingContent: fullThinking.isEmpty ? nil : fullThinking,
-                                isThinkingVisible: true
+                                thinkingContent: nil,  // 暂时不使用思维链
+                                isThinkingVisible: false
                             )
                             
                             print("✅ 消息已更新，新内容长度: \(newContent.count)")
@@ -335,18 +329,19 @@ struct ChatTab: View {
                     currentStreamingMessageId = nil
                     
                     // 🔗 服务端会返回知识库引用，暂时不需要客户端处理
-                    var finalResponseWithRefs = fullAnswer.isEmpty ? fullResponse : fullAnswer
+                    let finalResponse = fullResponse
                     
-                    // 更新最终消息包含引用
+                    // 更新最终消息
                     if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
                         messages[index] = ChatMessage(
                             id: aiMessageId,
-                            content: finalResponseWithRefs,
+                            content: finalResponse,
                             isFromUser: false,
                             timestamp: Date(),
-                            thinkingContent: fullThinking.isEmpty ? nil : fullThinking,
-                            isThinkingVisible: true
+                            thinkingContent: nil,  // 暂时不使用思维链
+                            isThinkingVisible: false
                         )
+                        print("🎯 最终消息已更新，内容长度: \(finalResponse.count)")
                     }
                     
                     saveChatHistory()
