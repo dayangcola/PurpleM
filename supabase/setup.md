@@ -62,7 +62,7 @@ Vercel会自动配置以下环境变量：
 
 ### 通过API测试:
 ```bash
-curl https://purple-m.vercel.app/api/supabase-init
+curl https://purple-m.vercel.app/api/system?action=supabase-status
 ```
 
 应该返回:
