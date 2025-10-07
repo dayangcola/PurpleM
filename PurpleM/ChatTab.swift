@@ -705,6 +705,7 @@ struct ChatBubble: View {
                 }
                 
                 // 消息内容
+                let _ = print("🔍 检查消息内容: '\(message.content)' (长度: \(message.content.count))")
                 if !message.content.isEmpty {
                     Text(message.content)
                     .font(.system(size: 15))
@@ -723,6 +724,14 @@ struct ChatBubble: View {
                         RoundedRectangle(cornerRadius: 18)
                             .stroke(isStreaming ? Color.starGold.opacity(0.3) : Color.moonSilver.opacity(0.2), lineWidth: 1)
                     )
+                } else {
+                    // 调试：显示空内容消息
+                    Text("🔍 空内容消息 (ID: \(message.id))")
+                        .font(.caption)
+                        .foregroundColor(.red)
+                        .padding(8)
+                        .background(Color.red.opacity(0.1))
+                        .cornerRadius(8)
                 }
                 
                 // 时间戳
