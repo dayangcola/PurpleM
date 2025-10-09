@@ -258,8 +258,8 @@ struct ChatTab: View {
                 var fullThinking = ""
                 var fullAnswer = ""
                 
-                // 构建上下文
-                let context = buildStreamingContext()
+        // 构建上下文（仅包含对话历史，不再包含系统提示）
+        let context = buildStreamingContext()
                 print("📦 上下文大小: \(context.count) 条消息")
                 
                 // 🎯 获取用户信息和命盘上下文
@@ -268,8 +268,6 @@ struct ChatTab: View {
                 let detectedEmotion = detectEmotion(from: messageText)
                 
                 // 🔗 构建完整的系统提示词
-                let systemPrompt = AIPersonality.systemPrompt
-                
                 // 🌐 调用增强版流式服务（服务端会进行知识库搜索）
                 print("🌐 调用增强版 StreamingAIService...")
                 let stream = try await streamingService.sendStreamingMessage(
@@ -281,7 +279,7 @@ struct ChatTab: View {
                     scene: scene.rawValue,
                     emotion: detectedEmotion.rawValue,
                     chartContext: chartContext,
-                    systemPrompt: systemPrompt
+                    promptProfileId: AIPromptProfile.defaultProfileId
                 )
                 
                 print("🔄 开始接收流式数据...")
@@ -403,9 +401,6 @@ struct ChatTab: View {
     // 构建流式上下文
     private func buildStreamingContext() -> [(role: String, content: String)] {
         var context: [(role: String, content: String)] = []
-        
-        // 添加系统提示词
-        context.append((role: "system", content: AIPersonality.systemPrompt))
         
         // 添加最近的对话历史（限制10条避免token过多）
         let recentMessages = messages.suffix(10).filter { !$0.content.isEmpty }

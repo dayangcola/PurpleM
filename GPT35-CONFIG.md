@@ -17,16 +17,11 @@
 1. **lib/ai-gateway-client.js**
    - 默认模型: `gpt-3.5-turbo`
 
-2. **api/chat-stream-v2.js**
-   - fast: `gpt-3.5-turbo`
-   - standard: `gpt-3.5-turbo` ⬇️
-   - advanced: `gpt-4o-mini`
+2. **api/chat-stream-enhanced.js**
+   - fast/standard/advanced 映射在服务端统一配置
 
 3. **api/thinking-chain.js**
    - 同上配置
-
-4. **api/chat-stream-enhanced.js**
-   - 默认: `gpt-3.5-turbo`
 
 ## 🚀 使用方法
 

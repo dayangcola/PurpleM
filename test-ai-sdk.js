@@ -31,10 +31,10 @@ function logTest(name, success, message = '') {
 
 // 测试流式响应
 async function testStreamingAPI() {
-  console.log(`\n${colors.blue}⭐ 测试流式 API (chat-stream-v2)${colors.reset}`);
+  console.log(`\n${colors.blue}⭐ 测试流式 API (chat-stream-enhanced)${colors.reset}`);
   
   try {
-    const response = await fetch(`${BASE_URL}/api/chat-stream-v2`, {
+    const response = await fetch(`${BASE_URL}/api/chat-stream-enhanced`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -66,10 +66,10 @@ async function testStreamingAPI() {
       chunks.push(chunk);
     }
     
-    logTest('Stream v2 API', true, `接收到 ${chunks.length} 个数据块`);
+    logTest('Stream enhanced API', true, `接收到 ${chunks.length} 个数据块`);
     
   } catch (error) {
-    logTest('Stream v2 API', false, error.message);
+    logTest('Stream enhanced API', false, error.message);
   }
 }
 

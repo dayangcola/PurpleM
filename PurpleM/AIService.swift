@@ -28,6 +28,8 @@ struct BackendChatRequest: Codable {
     let message: String
     let conversationHistory: [APIMessage]
     let userInfo: UserInfoData?
+    let promptProfileId: String
+    let userContext: String?
     
     struct APIMessage: Codable {
         let role: String
@@ -72,6 +74,7 @@ struct AIPersonality {
     - 适当引用古典智慧
     - 回答要积极正面，给人希望
     """
+
     
     static func getContextPrompt(userInfo: UserInfo?, chartData: ChartData?) -> String {
         var context = "用户信息：\n"
@@ -129,28 +132,7 @@ class AIService: NSObject, ObservableObject, URLSessionDelegate {
     
     // 重置对话
     func resetConversation() {
-        conversationHistory = [
-            APIMessage(
-                role: MessageRole.system.rawValue,
-                content: AIPersonality.systemPrompt
-            )
-        ]
-        
-        // 添加用户上下文
-        let userDataManager = UserDataManager.shared
-        let contextPrompt = AIPersonality.getContextPrompt(
-            userInfo: userDataManager.currentUser,
-            chartData: userDataManager.currentChart
-        )
-        
-        if !contextPrompt.isEmpty {
-            conversationHistory.append(
-                APIMessage(
-                    role: MessageRole.system.rawValue,
-                    content: contextPrompt
-                )
-            )
-        }
+        conversationHistory = []
     }
     
     // 发送消息
@@ -161,9 +143,7 @@ class AIService: NSObject, ObservableObject, URLSessionDelegate {
         }
         
         // 准备对话历史（不包括系统消息）
-        let historyForBackend = conversationHistory.filter { msg in
-            msg.role != MessageRole.system.rawValue
-        }.map { msg in
+        let historyForBackend = conversationHistory.map { msg in
             BackendChatRequest.APIMessage(
                 role: msg.role,
                 content: msg.content
@@ -187,11 +167,19 @@ class AIService: NSObject, ObservableObject, URLSessionDelegate {
             )
         }()
         
+        // 用户上下文（用于服务端构建提示词）
+        let userContext = AIPersonality.getContextPrompt(
+            userInfo: UserDataManager.shared.currentUser,
+            chartData: UserDataManager.shared.currentChart
+        )
+
         // 创建请求
         let request = BackendChatRequest(
             message: message,
             conversationHistory: historyForBackend,
-            userInfo: userInfo
+            userInfo: userInfo,
+            promptProfileId: AIPromptProfile.defaultProfileId,
+            userContext: userContext.isEmpty ? nil : userContext
         )
         
         do {
@@ -238,10 +226,8 @@ class AIService: NSObject, ObservableObject, URLSessionDelegate {
                 )
                 
                 // 限制历史长度，保留最近20条消息
-                if conversationHistory.count > 22 { // 2个系统消息 + 20条对话
-                    let systemMessages = conversationHistory.prefix(2)
-                    let recentMessages = conversationHistory.suffix(20)
-                    conversationHistory = Array(systemMessages) + Array(recentMessages)
+                if conversationHistory.count > 20 {
+                    conversationHistory = Array(conversationHistory.suffix(20))
                 }
                 
                 await MainActor.run {
@@ -307,4 +293,3 @@ class AIService: NSObject, ObservableObject, URLSessionDelegate {
         completionHandler(.performDefaultHandling, nil)
     }
 }
-

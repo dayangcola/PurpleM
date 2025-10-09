@@ -88,7 +88,7 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         scene: String? = nil,
         emotion: String? = nil,
         chartContext: String? = nil,
-        systemPrompt: String? = nil,
+        promptProfileId: String = AIPromptProfile.defaultProfileId,
         model: String = "standard"  // 模型选择: fast, standard, advanced
     ) async throws -> AsyncThrowingStream<String, Error> {
         
@@ -141,10 +141,8 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
             requestBody["chartContext"] = chartContext
         }
         
-        // 添加系统提示词
-        if let systemPrompt = systemPrompt {
-            requestBody["systemPrompt"] = systemPrompt
-        }
+        // 指定服务端使用的提示词配置
+        requestBody["promptProfileId"] = promptProfileId
         
         request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
         
@@ -210,7 +208,11 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
             Task {
                 do {
                     var fullResponse = ""
-                    let stream = try await self.sendStreamingMessage(message, context: context)
+                    let stream = try await self.sendStreamingMessage(
+                        message,
+                        context: context,
+                        promptProfileId: AIPromptProfile.defaultProfileId
+                    )
                     
                     for try await chunk in stream {
                         fullResponse += chunk
@@ -414,7 +416,8 @@ extension StreamingAIService {
         // 获取流式响应
         let stream = try await sendStreamingMessage(
             messageText,
-            context: context
+            context: context,
+            promptProfileId: AIPromptProfile.defaultProfileId
         )
         
         // 收集所有响应块

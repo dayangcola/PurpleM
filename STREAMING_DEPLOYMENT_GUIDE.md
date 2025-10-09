@@ -3,12 +3,12 @@
 ## 当前状态
 ✅ 前端已配置为支持流式响应
 ⚠️ 暂时使用普通模式以确保功能正常
-❌ 流式 API 端点需要部署到 Vercel
+❌ 流式 API 端点需要部署到 Vercel (`/api/chat-stream-enhanced`)
 
 ## 问题诊断
 根据日志分析，流式功能不工作的原因是：
-1. 后端 `chat-stream.js` API 还未部署到 Vercel
-2. 前端尝试访问 `https://purplem.vercel.app/api/chat-stream` 但端点不存在
+1. 后端 `chat-stream-enhanced.js` API 还未部署到 Vercel
+2. 前端尝试访问 `https://purplem.vercel.app/api/chat-stream-enhanced` 但端点不存在
 3. 流式请求失败后，降级机制也失败了，导致对话框无响应
 
 ## 紧急修复（已完成）
@@ -46,7 +46,7 @@ npm i -g vercel
 vercel dev
 
 # 测试端点（在另一个终端）
-curl -X POST http://localhost:3000/api/chat-stream \
+curl -X POST http://localhost:3000/api/chat-stream-enhanced \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -91,7 +91,7 @@ vercel --prod
 vercel ls
 
 # 测试流式端点
-curl -X POST https://purplem-backend.vercel.app/api/chat-stream \
+curl -X POST https://purplem-backend.vercel.app/api/chat-stream-enhanced \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [
@@ -108,7 +108,7 @@ curl -X POST https://purplem-backend.vercel.app/api/chat-stream \
 编辑 `/Users/link/Downloads/iztro-main/PurpleM/PurpleM/Services/StreamingAIService.swift`:
 ```swift
 // 将第 89 行的 URL 改为你的实际部署地址
-let endpoint = "https://your-actual-url.vercel.app/api/chat-stream"
+let endpoint = "https://your-actual-url.vercel.app/api/chat-stream-enhanced"
 ```
 
 ### 步骤 8：启用流式功能

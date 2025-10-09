@@ -24,8 +24,8 @@
                     │         Vercel Serverless Functions     │
                     │                                          │
                     │  ┌────────────────────────────────────┐ │
-                    │  │  /api/chat-stream-v2 (主要端点)     │ │
-                    │  │  /api/chat-stream-enhanced         │ │
+                    │  │  /api/chat-stream-enhanced (主要端点) │ │
+                    │  │  /api/chat-auto (非流式降级)        │ │
                     │  │  /api/thinking-chain              │ │
                     │  └──────────┬─────────────────────────┘ │
                     └─────────────┼───────────────────────────┘
@@ -87,7 +87,7 @@ func sendStreamingMessage() {
     ]
     
     // 发送到 Vercel
-    let url = "https://purple-m.vercel.app/api/chat-stream-v2"
+    let url = "https://purple-m.vercel.app/api/chat-stream-enhanced"
     URLSession.dataTask(with: request)
 }
 ```
@@ -95,35 +95,46 @@ func sendStreamingMessage() {
 ### 3️⃣ **Vercel API 处理请求**
 
 ```javascript
-// api/chat-stream-v2.js
+// api/chat-stream-enhanced.js
+import { buildEnhancedMessages } from './_shared/enhancedChatCore.js';
 export default async function handler(req, res) {
-    const { messages, userMessage, enableKnowledge, ... } = req.body;
-    
-    // Step 1: 构建系统提示词
-    let systemPrompt = SYSTEM_PROMPTS.base;
-    
-    // Step 2: 如果启用知识库
-    if (enableKnowledge && userMessage) {
-        // 调用 Supabase 向量搜索
-        const embedding = await generateEmbedding(userMessage);
-        const knowledgeResults = await supabase.rpc('search_knowledge', {
-            query_embedding: embedding
-        });
-        systemPrompt += knowledgeResults;
-    }
-    
-    // Step 3: 添加场景、情绪、用户信息
-    systemPrompt += buildContext(scene, emotion, userInfo);
-    
-    // Step 4: 调用 AI Gateway
-    const response = await streamChatCompletion({
-        messages: [{ role: 'system', content: systemPrompt }, ...messages],
-        model: 'gpt-3.5-turbo'
+    const {
+        messages,
+        userMessage,
+        scene,
+        emotion,
+        userInfo,
+        chartContext
+    } = req.body;
+
+    const {
+        messages: enhancedMessages
+    } = await buildEnhancedMessages({
+        messages,
+        userMessage,
+        scene,
+        emotion,
+        userInfo,
+        chartContext,
+        enableKnowledge: true
     });
-    
-    // Step 5: 流式返回
-    for await (const chunk of handleStreamResponse(response)) {
-        res.write(`data: {"content": "${chunk}"}\n\n`);
+
+    const response = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.VERCEL_AI_GATEWAY_KEY}`
+        },
+        body: JSON.stringify({
+            model: 'openai/gpt-5',
+            messages: enhancedMessages,
+            stream: true
+        })
+    });
+
+    // 流式写回客户端
+    for await (const chunk of response.body) {
+        res.write(chunk);
     }
 }
 ```
@@ -174,7 +185,7 @@ func handleStreamResponse() {
 | 文件 | 作用 | 位置 |
 |------|------|------|
 | **StreamingAIService.swift** | iOS 端 AI 服务 | 客户端 |
-| **chat-stream-v2.js** | 主要 API 端点 | 服务端 |
+| **chat-stream-enhanced.js** | 主要 API 端点 | 服务端 |
 | **ai-gateway-client.js** | Gateway 调用封装 | 服务端 |
 | **ChatTab.swift** | 对话界面 | 客户端 |
 

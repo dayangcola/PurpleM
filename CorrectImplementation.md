@@ -40,7 +40,7 @@ export const DEFAULT_MODEL = customOpenAI('gpt-4o-mini');
 export const EMBEDDING_MODEL = customOpenAI.embedding('text-embedding-ada-002');
 ```
 
-### 2. 统一的流式 API (`api/chat-stream-v2.js`)
+### 2. 统一的流式 API (`api/chat-stream-enhanced.js`)
 ```javascript
 import { streamText, embed } from 'ai';
 import { DEFAULT_MODEL, EMBEDDING_MODEL } from '../lib/ai-config';
@@ -212,7 +212,7 @@ func sendStreamingMessage(
 ) async throws -> AsyncThrowingStream<String, Error> {
     
     // 使用新的统一端点
-    let endpoint = "https://purple-m.vercel.app/api/chat-stream-v2"
+    let endpoint = "https://purple-m.vercel.app/api/chat-stream-enhanced"
     
     // 构建请求
     var request = URLRequest(url: URL(string: endpoint)!)
@@ -337,9 +337,11 @@ export function wrapWithMonitoring(handler) {
 ```json
 {
   "functions": {
-    "api/chat-stream-v2.js": {
-      "maxDuration": 60,
-      "memory": 1024
+    "api/chat-stream-enhanced.js": {
+      "maxDuration": 60
+    },
+    "api/chat-auto.js": {
+      "maxDuration": 60
     }
   },
   "env": {

@@ -33,7 +33,7 @@
 重新部署完成后（约30秒），测试API：
 
 ```bash
-curl -X POST https://purple-m.vercel.app/api/chat-stream \
+curl -X POST https://purple-m.vercel.app/api/chat-stream-enhanced \
   -H "Content-Type: application/json" \
   -d '{"messages": [{"role": "user", "content": "你好"}], "stream": false}'
 ```
@@ -75,7 +75,7 @@ curl -X POST https://purple-m.vercel.app/api/chat-stream \
 ## iOS应用配置
 ✅ 已更新：StreamingAIService.swift 现在指向正确的URL:
 ```swift
-let endpoint = "https://purple-m.vercel.app/api/chat-stream"
+let endpoint = "https://purple-m.vercel.app/api/chat-stream-enhanced"
 ```
 
 ---

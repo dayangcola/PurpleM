@@ -14,7 +14,7 @@
 ```
 
 ### 2. **更新所有 API 端点**
-- `api/chat-stream-v2.js` - 使用 Gateway 客户端
+- `api/chat-stream-enhanced.js` - 使用 Gateway 客户端
 - `api/thinking-chain.js` - 使用 Gateway 客户端
 - `api/embeddings-updated.js` - 使用 Gateway 客户端
 

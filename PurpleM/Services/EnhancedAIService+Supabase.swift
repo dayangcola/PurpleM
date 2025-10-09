@@ -148,9 +148,6 @@ extension EnhancedAIService {
             // 恢复对话历史到内存
             conversationHistory.removeAll()
             
-            // 添加系统提示
-            conversationHistory.append((role: "system", content: AIPersonality.systemPrompt))
-            
             // 添加历史消息（按时间正序）
             for message in messages.reversed() {
                 conversationHistory.append((role: message.role, content: message.content))

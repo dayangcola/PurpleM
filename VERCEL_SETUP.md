@@ -45,7 +45,7 @@ SUPABASE_ANON_KEY = [你的Supabase密钥]
 在 `PurpleM/Services/StreamingAIService.swift` 文件中，更新第89行的URL：
 
 ```swift
-let endpoint = "https://你的实际部署URL/api/chat-stream"
+let endpoint = "https://你的实际部署URL/api/chat-stream-enhanced"
 ```
 
 ## 验证部署
@@ -53,7 +53,7 @@ let endpoint = "https://你的实际部署URL/api/chat-stream"
 部署成功后，测试API端点：
 
 ```bash
-curl -X POST https://你的部署URL/api/chat-stream \
+curl -X POST https://你的部署URL/api/chat-stream-enhanced \
   -H "Content-Type: application/json" \
   -d '{"messages": [{"role": "user", "content": "测试"}], "stream": false}'
 ```
@@ -87,7 +87,7 @@ cd vercel-backend
 npm install
 vercel dev
 ```
-然后将URL改为 `http://localhost:3000/api/chat-stream`
+然后将URL改为 `http://localhost:3000/api/chat-stream-enhanced`
 
 ## 故障排除
 

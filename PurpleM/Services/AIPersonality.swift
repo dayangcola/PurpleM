@@ -50,6 +50,14 @@ struct EnhancedAIPersonality {
     - 适时使用比喻和故事，让命理知识更生动
     - 必要时可以使用emoji，但要适度（✨ 🌟 💫 等星空主题）
     """
+
+
+        static func framework() -> String {
+            template
+        }
+    }
+
+    // MARK: - 统一出口
     
     // MARK: - 场景化提示词
     enum ScenePrompt {
@@ -303,6 +311,12 @@ struct EnhancedAIPersonality {
     }
 }
 
+// MARK: - 提示词配置
+struct AIPromptProfile {
+    /// 默认后端提示词配置ID，由服务端根据ID选择具体系统提示词
+    static let defaultProfileId = "stellar_master_v1"
+}
+
 // MARK: - 提示词构建器
 class PromptBuilder {
     private let personality = EnhancedAIPersonality.self
@@ -312,58 +326,24 @@ class PromptBuilder {
         emotion: UserEmotion,
         memory: UserMemory?
     ) -> String {
-        var prompt = personality.systemPrompt + "\n\n"
-        
-        // 添加场景提示词
-        prompt += getScenePrompt(for: scene) + "\n\n"
-        
-        // 添加情绪调整
-        prompt += getEmotionalTone(for: emotion) + "\n\n"
-        
-        // 添加用户记忆
+        var sections: [String] = []
+
+        // 提供结构化元信息，交由服务端构建最终提示词
+        sections.append(
+            """
+            【上下文元数据】
+            场景：\(scene.rawValue)
+            情绪：\(emotion.rawValue)
+            """
+        )
+
         if let memory = memory {
-            prompt += EnhancedAIPersonality.MemoryTemplate.buildContextFromMemory(memory) + "\n\n"
+            sections.append(EnhancedAIPersonality.MemoryTemplate.buildContextFromMemory(memory))
         }
-        
-        // 添加质量标准
-        prompt += EnhancedAIPersonality.QualityStandards.requirements
-        
-        return prompt
+
+        sections.append(EnhancedAIPersonality.QualityStandards.requirements)
+
+        return sections.joined(separator: "\n\n")
     }
     
-    private func getScenePrompt(for scene: ConversationScene) -> String {
-        switch scene {
-        case .greeting:
-            return EnhancedAIPersonality.ScenePrompt.greeting.content
-        case .chartReading:
-            return EnhancedAIPersonality.ScenePrompt.chartReading.content
-        case .fortuneTelling:
-            return EnhancedAIPersonality.ScenePrompt.fortuneTelling.content
-        case .learning:
-            return EnhancedAIPersonality.ScenePrompt.learning.content
-        case .counseling:
-            return EnhancedAIPersonality.ScenePrompt.counseling.content
-        case .emergency:
-            return EnhancedAIPersonality.ScenePrompt.emergency.content
-        }
-    }
-    
-    private func getEmotionalTone(for emotion: UserEmotion) -> String {
-        switch emotion {
-        case .sad:
-            return EnhancedAIPersonality.EmotionalTone.sad.adjustmentPrompt
-        case .anxious:
-            return EnhancedAIPersonality.EmotionalTone.anxious.adjustmentPrompt
-        case .confused:
-            return EnhancedAIPersonality.EmotionalTone.confused.adjustmentPrompt
-        case .excited:
-            return EnhancedAIPersonality.EmotionalTone.excited.adjustmentPrompt
-        case .angry:
-            return EnhancedAIPersonality.EmotionalTone.anxious.adjustmentPrompt // 使用焦虑的处理方式
-        case .curious:
-            return EnhancedAIPersonality.EmotionalTone.neutral.adjustmentPrompt // 使用中性的处理方式
-        case .neutral:
-            return EnhancedAIPersonality.EmotionalTone.neutral.adjustmentPrompt
-        }
-    }
 }
