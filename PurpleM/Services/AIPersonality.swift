@@ -50,14 +50,6 @@ struct EnhancedAIPersonality {
     - 适时使用比喻和故事，让命理知识更生动
     - 必要时可以使用emoji，但要适度（✨ 🌟 💫 等星空主题）
     """
-
-
-        static func framework() -> String {
-            template
-        }
-    }
-
-    // MARK: - 统一出口
     
     // MARK: - 场景化提示词
     enum ScenePrompt {
