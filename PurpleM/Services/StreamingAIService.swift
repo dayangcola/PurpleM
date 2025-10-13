@@ -52,6 +52,9 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
     private var currentTask: URLSessionDataTask?
     private var responseBuffer = ""
     private var eventParser = SSEParser()
+    private var lastStatusCode: Int?
+    private var hasReceivedChunk = false
+    private var errorBuffer = ""
     
     // 用于流式响应的Subject
     private let streamSubject = PassthroughSubject<String, Error>()
@@ -164,6 +167,9 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
         currentResponse = ""
         responseBuffer = ""
         streamProgress = 0.0
+        lastStatusCode = nil
+        hasReceivedChunk = false
+        errorBuffer = ""
         
         // 创建数据任务
         currentTask = urlSession.dataTask(with: request)
@@ -176,6 +182,7 @@ class StreamingAIService: NSObject, ObservableObject, URLSessionDelegate {
             switch event {
             case .message(let content):
                 self.currentResponse += content
+                self.hasReceivedChunk = true
                 continuation.yield(content)
                 
             case .error(let error):
@@ -265,9 +272,14 @@ extension StreamingAIService: URLSessionDataDelegate {
                 print("❌ 无法解码数据为UTF-8字符串")
                 return
             }
-            
+
             print("📥 收到原始数据: \(string.prefix(200))...") // 只打印前200个字符
-            
+
+            if let status = lastStatusCode, status != 200 {
+                errorBuffer += string
+                return
+            }
+
             responseBuffer += string
             
             // 解析SSE事件
@@ -306,12 +318,14 @@ extension StreamingAIService: URLSessionDataDelegate {
                             case "chunk":
                                 if let content = json["content"] as? String {
                                     print("📝 收到内容块: \(content)")
+                                    hasReceivedChunk = true
                                     eventParser.onEvent?(.message(content))
                                     continue
                                 }
                             case "text", "content":
                                 if let content = json["content"] as? String {
                                     print("📝 收到内容块: \(content)")
+                                    hasReceivedChunk = true
                                     eventParser.onEvent?(.message(content))
                                     continue
                                 }
@@ -345,6 +359,7 @@ extension StreamingAIService: URLSessionDataDelegate {
                            let chunk = try? JSONDecoder().decode(StreamChunk.self, from: jsonData),
                            let content = chunk.choices?.first?.delta.content {
                             print("📝 收到内容块 (OpenAI格式): \(content)")
+                            hasReceivedChunk = true
                             eventParser.onEvent?(.message(content))
                         }
                     } catch {
@@ -367,11 +382,29 @@ extension StreamingAIService: URLSessionDataDelegate {
             if let error = error {
                 print("❌ URLSession错误: \(error.localizedDescription)")
                 eventParser.onEvent?(.error(error))
+            } else if let status = lastStatusCode, status != 200 {
+                let message = errorBuffer.trimmingCharacters(in: .whitespacesAndNewlines)
+                let description = message.isEmpty ? "AI服务返回状态码 \(status)" : message
+                let statusError = NSError(
+                    domain: "StreamingAIService",
+                    code: status,
+                    userInfo: [NSLocalizedDescriptionKey: description]
+                )
+                print("❌ 流式请求失败: \(description)")
+                eventParser.onEvent?(.error(statusError))
+            } else if !hasReceivedChunk {
+                let emptyError = NSError(
+                    domain: "StreamingAIService",
+                    code: -2,
+                    userInfo: [NSLocalizedDescriptionKey: "AI服务暂时无响应"]
+                )
+                print("❌ 未收到任何流式数据")
+                eventParser.onEvent?(.error(emptyError))
             } else {
                 print("✅ URLSession任务完成")
                 eventParser.onEvent?(.completed)
             }
-            
+
             isStreaming = false
         }
     }
@@ -379,9 +412,10 @@ extension StreamingAIService: URLSessionDataDelegate {
     nonisolated func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         Task { @MainActor in
             if let httpResponse = response as? HTTPURLResponse {
+                lastStatusCode = httpResponse.statusCode
                 print("📡 HTTP响应状态码: \(httpResponse.statusCode)")
                 print("📡 Content-Type: \(httpResponse.allHeaderFields["Content-Type"] ?? "unknown")")
-                
+
                 if httpResponse.statusCode != 200 {
                     print("❌ 非200状态码，可能有错误")
                 }
