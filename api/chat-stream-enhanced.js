@@ -149,7 +149,7 @@ export default async function handler(req, res) {
       })
     });
 
-    if (!response.ok) {
+    if (!response.ok || !response.body) {
       const error = await response.text();
       console.error('❌ AI Gateway 错误:', error);
       res.write(`data: {"type":"error","error":${JSON.stringify(error)}}\n\n`);
@@ -157,49 +157,89 @@ export default async function handler(req, res) {
       return;
     }
 
-    const reader = response.body;
-    reader.on('data', (chunk) => {
-      const lines = chunk.toString().split('\n');
+    let hasStreamed = false;
 
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) {
-          continue;
+    try {
+      for await (const rawChunk of response.body) {
+        const chunk = typeof rawChunk === 'string'
+          ? rawChunk
+          : Buffer.from(rawChunk).toString('utf8');
+        const lines = chunk.split('\n');
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) {
+            continue;
+          }
+
+          if (line.includes('[DONE]')) {
+            res.write('data: {"type":"done"}\n\n');
+            res.end();
+            return;
+          }
+
+          try {
+            const data = JSON.parse(line.slice(6));
+            const content = data.choices?.[0]?.delta?.content;
+
+            if (content) {
+              hasStreamed = true;
+              const escapedContent = JSON.stringify(content);
+              res.write(`data: {"type":"chunk","content":${escapedContent}}\n\n`);
+            }
+          } catch (error) {
+            // 忽略解析错误
+          }
         }
+      }
+    } catch (error) {
+      console.error('❌ 流式响应错误:', error);
+      if (!res.writableEnded) {
+        res.write('data: {"type":"error","error":"Stream error"}\n\n');
+        res.end();
+      }
+      return;
+    }
 
-        if (line.includes('[DONE]')) {
-          res.write('data: {"type":"done"}\n\n');
+    if (!hasStreamed) {
+      console.warn('⚠️ 未收到任何流式内容，降级为普通响应');
+      try {
+        const fallbackResponse = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${gatewayKey}`
+          },
+          body: JSON.stringify({
+            model: actualModel,
+            messages: allMessages,
+            temperature,
+            max_tokens: 2000,
+            stream: false
+          })
+        });
+
+        if (fallbackResponse.ok) {
+          const data = await fallbackResponse.json();
+          const aiMessage = data.choices?.[0]?.message?.content || '抱歉，我暂时无法生成回复，请稍后重试。';
+          const escapedContent = JSON.stringify(aiMessage);
+          res.write(`data: {"type":"chunk","content":${escapedContent}}\n\n`);
+        } else {
+          const errorText = await fallbackResponse.text();
+          console.error('❌ 普通模式请求失败:', errorText);
+          res.write('data: {"type":"error","error":"AI service unavailable"}\n\n');
           res.end();
           return;
         }
-
-        try {
-          const data = JSON.parse(line.slice(6));
-          const content = data.choices?.[0]?.delta?.content;
-
-          if (content) {
-            const escapedContent = JSON.stringify(content);
-            res.write(`data: {"type":"chunk","content":${escapedContent}}\n\n`);
-          }
-        } catch (error) {
-          // 忽略解析错误
-        }
+      } catch (fallbackError) {
+        console.error('❌ 普通模式降级失败:', fallbackError);
+        res.write('data: {"type":"error","error":"AI service unavailable"}\n\n');
+        res.end();
+        return;
       }
-    });
+    }
 
-    reader.on('end', () => {
-      if (!res.headersSent) {
-        res.write('data: {"type":"done"}\n\n');
-      }
-      res.end();
-    });
-
-    reader.on('error', (error) => {
-      console.error('❌ 流式响应错误:', error);
-      if (!res.headersSent) {
-        res.write('data: {"type":"error","error":"Stream error"}\n\n');
-      }
-      res.end();
-    });
+    res.write('data: {"type":"done"}\n\n');
+    res.end();
   } catch (error) {
     console.error('❌ 处理请求失败:', error);
 
