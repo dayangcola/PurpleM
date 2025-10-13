@@ -158,6 +158,7 @@ export default async function handler(req, res) {
     }
 
     let hasStreamed = false;
+    let streamError = null;
 
     try {
       for await (const rawChunk of response.body) {
@@ -193,39 +194,43 @@ export default async function handler(req, res) {
       }
     } catch (error) {
       console.error('❌ 流式响应错误:', error);
-      if (!res.writableEnded) {
-        res.write('data: {"type":"error","error":"Stream error"}\n\n');
-        res.end();
-      }
-      return;
+      streamError = error;
     }
 
-    if (!hasStreamed) {
-      console.warn('⚠️ 未收到任何流式内容，降级为普通响应');
-      try {
-        const fallbackResponse = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${gatewayKey}`
-          },
-          body: JSON.stringify({
-            model: actualModel,
-            messages: allMessages,
-            temperature,
-            max_tokens: 2000,
-            stream: false
-          })
-        });
+    const sendFallback = async () => {
+      console.warn('⚠️ 未收到任何流式内容或流式中断，降级为普通响应');
+      const fallbackResponse = await fetch('https://ai-gateway.vercel.sh/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${gatewayKey}`
+        },
+        body: JSON.stringify({
+          model: actualModel,
+          messages: allMessages,
+          temperature,
+          max_tokens: 2000,
+          stream: false
+        })
+      });
 
-        if (fallbackResponse.ok) {
-          const data = await fallbackResponse.json();
-          const aiMessage = data.choices?.[0]?.message?.content || '抱歉，我暂时无法生成回复，请稍后重试。';
-          const escapedContent = JSON.stringify(aiMessage);
-          res.write(`data: {"type":"chunk","content":${escapedContent}}\n\n`);
-        } else {
-          const errorText = await fallbackResponse.text();
-          console.error('❌ 普通模式请求失败:', errorText);
+      if (!fallbackResponse.ok) {
+        const errorText = await fallbackResponse.text();
+        console.error('❌ 普通模式请求失败:', errorText);
+        return false;
+      }
+
+      const data = await fallbackResponse.json();
+      const aiMessage = data.choices?.[0]?.message?.content || '抱歉，我暂时无法生成回复，请稍后重试。';
+      const escapedContent = JSON.stringify(aiMessage);
+      res.write(`data: {"type":"chunk","content":${escapedContent}}\n\n`);
+      return true;
+    };
+
+    if (!hasStreamed) {
+      try {
+        const fallbackSuccess = await sendFallback();
+        if (!fallbackSuccess) {
           res.write('data: {"type":"error","error":"AI service unavailable"}\n\n');
           res.end();
           return;
@@ -236,6 +241,12 @@ export default async function handler(req, res) {
         res.end();
         return;
       }
+    } else if (streamError) {
+      if (!res.writableEnded) {
+        res.write('data: {"type":"error","error":"Stream error"}\n\n');
+        res.end();
+      }
+      return;
     }
 
     res.write('data: {"type":"done"}\n\n');
