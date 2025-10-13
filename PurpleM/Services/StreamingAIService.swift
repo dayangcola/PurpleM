@@ -354,10 +354,10 @@ extension StreamingAIService: URLSessionDataDelegate {
             }
             
             // 清理已处理的数据 - 保留最后一个不完整的行
-            let lines = responseBuffer.components(separatedBy: "\n")
-            if lines.count > 1 {
+            let bufferLines = responseBuffer.components(separatedBy: "\n")
+            if bufferLines.count > 1 {
                 // 保留最后一个可能不完整的行
-                responseBuffer = lines.last ?? ""
+                responseBuffer = bufferLines.last ?? ""
             }
         }
     }
