@@ -275,7 +275,7 @@ extension StreamingAIService: URLSessionDataDelegate {
             
             for line in lines {
                 if line.hasPrefix("data: ") {
-                    let jsonString = String(line.dropFirst(6))
+                    let jsonString = String(line.dropFirst(6)).trimmingCharacters(in: .whitespacesAndNewlines)
                     
                     if jsonString == "[DONE]" {
                         print("📌 收到流结束信号")
@@ -283,13 +283,33 @@ extension StreamingAIService: URLSessionDataDelegate {
                         continue
                     }
                     
+                    // 跳过空行
+                    if jsonString.isEmpty {
+                        continue
+                    }
+                    
+                    print("🔍 尝试解析JSON: \(jsonString)")
+                    
                     // 尝试解析我们的简化格式
                     if let jsonData = jsonString.data(using: .utf8),
                        let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any] {
                         
+                        print("✅ JSON解析成功: \(json)")
+                        
                         if let type = (json["type"] as? String)?.lowercased() {
+                            print("📋 事件类型: \(type)")
+                            
                             switch type {
-                            case "text", "content", "chunk":
+                            case "start":
+                                print("🚀 流式响应开始")
+                                continue
+                            case "chunk":
+                                if let content = json["content"] as? String {
+                                    print("📝 收到内容块: \(content)")
+                                    eventParser.onEvent?(.message(content))
+                                    continue
+                                }
+                            case "text", "content":
                                 if let content = json["content"] as? String {
                                     print("📝 收到内容块: \(content)")
                                     eventParser.onEvent?(.message(content))
@@ -309,11 +329,14 @@ extension StreamingAIService: URLSessionDataDelegate {
                                     continue
                                 }
                             default:
+                                print("⚠️ 未知事件类型: \(type)")
                                 break
                             }
                         }
                         
                         // 未处理的类型交给OpenAI兼容解析
+                    } else {
+                        print("❌ JSON解析失败: \(jsonString)")
                     }
                     
                     // 尝试解析 OpenAI 格式（备用）
@@ -325,8 +348,7 @@ extension StreamingAIService: URLSessionDataDelegate {
                             eventParser.onEvent?(.message(content))
                         }
                     } catch {
-                        print("⚠️ 无法解析数据: \(jsonString)")
-                        continue
+                        print("⚠️ OpenAI格式解析失败: \(error.localizedDescription)")
                     }
                 }
             }
